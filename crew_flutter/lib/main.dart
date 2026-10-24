@@ -9,6 +9,10 @@ const navy = Color(0xFF12213D);
 const red = Color(0xFFE5103A);
 const background = Color(0xFFF5F7FA);
 const border = Color(0xFFE3E8EF);
+const defaultCrewBackendUrl = String.fromEnvironment(
+  'CREW_BACKEND_URL',
+  defaultValue: 'http://hashi-cabin.local:8001',
+);
 
 void main() => runApp(const HushitCrewApp());
 
@@ -35,7 +39,7 @@ class CrewDashboard extends StatefulWidget {
 }
 
 class _CrewDashboardState extends State<CrewDashboard> {
-  CrewApi api = CrewApi('http://127.0.0.1:8001');
+  CrewApi api = CrewApi(defaultCrewBackendUrl);
   List<CrewRequest> requests = [];
   List<CrewSeat> seats = [];
   String filter = 'All';
@@ -53,7 +57,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
     WidgetsBinding.instance.addPostFrameCallback(
       // Use IPv4 loopback explicitly; Chrome may resolve localhost to ::1
       // while the local Uvicorn process is listening on IPv4 only.
-      (_) => _connectToBackend('http://127.0.0.1:8001', 'CREW-DEMO'),
+      (_) => _connectToBackend(defaultCrewBackendUrl, 'CREW-DEMO'),
     );
   }
 
@@ -1512,7 +1516,7 @@ class ConnectDialog extends StatefulWidget {
 }
 
 class _ConnectDialogState extends State<ConnectDialog> {
-  final url = TextEditingController(text: 'http://127.0.0.1:8001');
+  final url = TextEditingController(text: defaultCrewBackendUrl);
   final code = TextEditingController(text: 'CREW-DEMO');
   @override
   void dispose() {
