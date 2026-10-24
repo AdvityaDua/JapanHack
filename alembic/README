@@ -1,0 +1,4 @@
+Alembic migration directory. Generate the first migration after installing dependencies with:
+
+alembic revision --autogenerate -m "initial schema"
+alembic upgrade head

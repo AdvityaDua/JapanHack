@@ -1,0 +1,70 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+
+# Python environments, caches, and local databases
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+
+# Build, coverage, and generated output
+build/
+dist/
+coverage/
+.coverage
+.coverage.*
+htmlcov/
+
+# Flutter/Dart generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+**/android/local.properties
+
+# IDE, OS, and temporary files
+.DS_Store
+*.class
+*.log
+*.swp
+.idea/
+.vscode/
+.atom/
+.history/
+.build/
+.buildlog/
+.swiftpm/
+migrate_working_dir/
+node_modules/
+.npm/
+
+# Version-control and platform metadata
+.svn/
+*.iml
+*.ipr
+*.iws
+
+# Flutter release symbolication artifacts
+app.*.symbols
+app.*.map.json
