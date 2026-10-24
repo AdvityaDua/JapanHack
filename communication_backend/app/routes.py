@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket,
 from app.config import settings
 from app.messaging import MQTTBus
 from app.realtime import manager
-from app.schemas import CreateRequestBody, EventResponse, PairDeviceRequest, PairDeviceResponse, RequestResponse, SessionResponse, UpdateStatusBody
-from app.service import create_request, pair_device, row_to_request, update_status, verify_device_token
+from app.schemas import CreateRequestBody, EventResponse, PairDeviceRequest, PairDeviceResponse, RequestResponse, SeatResponse, SessionResponse, UpdateStatusBody
+from app.service import create_request, pair_device, row_to_request, row_to_seat, update_status, verify_device_token
 from app.store import store
 
 
@@ -50,6 +50,12 @@ def make_router(bus: MQTTBus) -> APIRouter:
             raise HTTPException(status_code=403, detail="Crew device required")
         statuses = status.split(",") if status else None
         return [row_to_request(row) for row in store.list_requests(device["flight_id"], statuses)]
+
+    @router.get("/crew/seat-map", response_model=list[SeatResponse])
+    def crew_seat_map(device: dict = Depends(token_device)):
+        if device["device_type"] != "crew":
+            raise HTTPException(status_code=403, detail="Crew device required")
+        return [row_to_seat(row) for row in store.list_seats(device["flight_id"])]
 
     @router.patch("/crew/requests/{request_id}/status", response_model=RequestResponse)
     def crew_status(request_id: str, payload: UpdateStatusBody, device: dict = Depends(token_device)):

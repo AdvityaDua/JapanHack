@@ -22,7 +22,9 @@ class CrewApi {
       }),
     );
     if (response.statusCode != 200) {
-      throw Exception('Pairing failed (${response.statusCode})');
+      throw Exception(
+        'Pairing failed (${response.statusCode}): ${response.body}',
+      );
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return session = DeviceSession(
@@ -41,17 +43,41 @@ class CrewApi {
       headers: _headers(),
     );
     if (response.statusCode != 200) {
-      throw Exception('Could not load requests (${response.statusCode})');
+      throw Exception(
+        'Could not load requests (${response.statusCode}): ${response.body}',
+      );
     }
     return (jsonDecode(response.body) as List)
         .map((item) => CrewRequest.fromJson(item))
         .toList();
   }
 
-  Future<Map<String, dynamic>> fetchSession() async {
-    final response = await http.get(Uri.parse('$baseUrl/api/v1/session/current'));
+  Future<List<CrewSeat>> fetchSeatMap() async {
+    if (session == null) {
+      throw Exception('Pair the crew tablet first');
+    }
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/v1/crew/seat-map'),
+      headers: _headers(),
+    );
     if (response.statusCode != 200) {
-      throw Exception('Could not load flight session (${response.statusCode})');
+      throw Exception(
+        'Could not load seat map (${response.statusCode}): ${response.body}',
+      );
+    }
+    return (jsonDecode(response.body) as List)
+        .map((item) => CrewSeat.fromJson(item))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> fetchSession() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/v1/session/current'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Could not load flight session (${response.statusCode}): ${response.body}',
+      );
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }

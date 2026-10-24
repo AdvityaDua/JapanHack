@@ -59,6 +59,21 @@ class RequestResponse(BaseModel):
     updated_at: datetime
 
 
+class SeatResponse(BaseModel):
+    flight_id: str
+    seat_number: str
+    row_number: int
+    seat_column: str
+    seat_order: int
+    cabin_class: str
+    seat_type: str
+    occupancy_status: str
+    request_id: str | None = None
+    request_category: str | None = None
+    request_status: str | None = None
+    request_urgency: str | None = None
+
+
 class EventResponse(BaseModel):
     event_id: str
     event_type: str

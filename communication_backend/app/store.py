@@ -43,6 +43,17 @@ class Store:
                     status TEXT NOT NULL, assigned_crew_device_id TEXT,
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS flight_seats (
+                    flight_id TEXT NOT NULL,
+                    seat_number TEXT NOT NULL,
+                    row_number INTEGER NOT NULL,
+                    seat_column TEXT NOT NULL,
+                    seat_order INTEGER NOT NULL,
+                    cabin_class TEXT NOT NULL,
+                    seat_type TEXT NOT NULL,
+                    occupancy_status TEXT NOT NULL DEFAULT 'available',
+                    PRIMARY KEY (flight_id, seat_number)
+                );
                 CREATE TABLE IF NOT EXISTS request_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE NOT NULL,
                     request_id TEXT NOT NULL, flight_id TEXT NOT NULL,
@@ -117,6 +128,37 @@ class Store:
                 marks = ",".join("?" for _ in statuses)
                 return conn.execute(f"SELECT * FROM communication_requests WHERE flight_id = ? AND status IN ({marks}) ORDER BY created_at ASC", [flight_id, *statuses]).fetchall()
             return conn.execute("SELECT * FROM communication_requests WHERE flight_id = ? ORDER BY created_at ASC", (flight_id,)).fetchall()
+
+    def save_seat(self, seat: dict) -> None:
+        with self.lock, self.connect() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO flight_seats
+                (flight_id, seat_number, row_number, seat_column, seat_order,
+                 cabin_class, seat_type, occupancy_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                tuple(seat[field] for field in (
+                    "flight_id", "seat_number", "row_number", "seat_column",
+                    "seat_order", "cabin_class", "seat_type", "occupancy_status",
+                )),
+            )
+
+    def list_seats(self, flight_id: str) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            return conn.execute(
+                """SELECT s.*, r.id AS request_id, r.category AS request_category,
+                    r.status AS request_status, r.urgency AS request_urgency
+                FROM flight_seats s
+                LEFT JOIN communication_requests r ON r.id = (
+                    SELECT r2.id FROM communication_requests r2
+                    WHERE r2.flight_id = s.flight_id
+                      AND r2.seat_number = s.seat_number
+                      AND r2.status NOT IN ('cancelled', 'expired')
+                    ORDER BY r2.updated_at DESC LIMIT 1
+                )
+                WHERE s.flight_id = ?
+                ORDER BY s.row_number ASC, s.seat_order ASC""",
+                (flight_id,),
+            ).fetchall()
 
     def transition_request(self, request_id: str, status: str, crew_id: str | None, event: dict, topic: str, updated_at: str) -> sqlite3.Row:
         with self.lock, self.connect() as conn:

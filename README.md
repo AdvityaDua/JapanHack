@@ -39,14 +39,30 @@ Partner booking writes require `X-API-Key` and `Idempotency-Key` headers. API cl
 
 ## Demo booking sync
 
-With the API running locally, create a short-lived partner key and send a sample booking:
+With the API running locally, synchronize a ticket to the existing demo user. The
+script uses the real partner booking endpoint, so the booking appears in that
+user's `GET /api/v1/users/me/bookings` response. Re-running the command with the
+same order ID updates the same demo booking instead of creating another one.
 
 ```bash
-./.venv/bin/python scripts/demo_booking.py seed
-./.venv/bin/python scripts/demo_booking.py sync --api-key <printed-key>
+./.venv/bin/python scripts/demo_booking.py demo \
+  --email demo.passenger@example.com \
+  --external-user-id demo-passenger-001
+```
+
+Use the email of the user already registered in the database. You can customize
+the seat or booking reference for the demo:
+
+```bash
+./.venv/bin/python scripts/demo_booking.py demo \
+  --email passenger@example.com \
+  --seat 24A \
+  --booking-reference JAL-DEMO-001
 ```
 
 The sample booking includes a passenger, flight segment, and seat assignment.
+The `seed` and `sync` commands remain available when you want to inspect or
+provide the partner API key manually.
 - Use HTTPS and restrict `CORS_ORIGINS`.
 - Keep the R2 bucket private and use short-lived download URLs.
 - Add rate limiting at the edge or API gateway.

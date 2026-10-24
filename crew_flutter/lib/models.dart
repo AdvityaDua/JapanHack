@@ -70,6 +70,48 @@ class CrewRequest {
       .join(' ');
 }
 
+class CrewSeat {
+  const CrewSeat({
+    required this.seatNumber,
+    required this.rowNumber,
+    required this.column,
+    required this.cabinClass,
+    required this.seatType,
+    required this.occupancyStatus,
+    this.requestId,
+    this.requestCategory,
+    this.requestStatus,
+    this.requestUrgency,
+  });
+
+  final String seatNumber;
+  final int rowNumber;
+  final String column;
+  final String cabinClass;
+  final String seatType;
+  final String occupancyStatus;
+  final String? requestId;
+  final String? requestCategory;
+  final String? requestStatus;
+  final String? requestUrgency;
+
+  bool get hasRequest => requestId != null;
+  bool get isUrgent => requestUrgency == 'urgent';
+
+  factory CrewSeat.fromJson(Map<String, dynamic> json) => CrewSeat(
+    seatNumber: json['seat_number']?.toString() ?? '—',
+    rowNumber: (json['row_number'] as num?)?.toInt() ?? 0,
+    column: json['seat_column']?.toString() ?? '',
+    cabinClass: json['cabin_class']?.toString() ?? 'economy',
+    seatType: json['seat_type']?.toString() ?? 'middle',
+    occupancyStatus: json['occupancy_status']?.toString() ?? 'available',
+    requestId: json['request_id']?.toString(),
+    requestCategory: json['request_category']?.toString(),
+    requestStatus: json['request_status']?.toString(),
+    requestUrgency: json['request_urgency']?.toString(),
+  );
+}
+
 extension FirstOrNull<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
 }

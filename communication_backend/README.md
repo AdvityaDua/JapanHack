@@ -275,6 +275,7 @@ WS   /api/v1/edge/ws/passenger
 ```text
 POST /api/v1/edge/crew/devices/register
 GET  /api/v1/edge/crew/requests
+GET  /api/v1/crew/seat-map
 GET  /api/v1/edge/crew/requests/{request_id}
 PATCH /api/v1/edge/crew/requests/{request_id}/status
 POST /api/v1/edge/crew/requests/{request_id}/assign

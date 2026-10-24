@@ -37,6 +37,7 @@ class CrewDashboard extends StatefulWidget {
 class _CrewDashboardState extends State<CrewDashboard> {
   CrewApi api = CrewApi('http://127.0.0.1:8001');
   List<CrewRequest> requests = [];
+  List<CrewSeat> seats = [];
   String filter = 'All';
   String? selectedId;
   bool connected = false;
@@ -50,6 +51,8 @@ class _CrewDashboardState extends State<CrewDashboard> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback(
+      // Use IPv4 loopback explicitly; Chrome may resolve localhost to ::1
+      // while the local Uvicorn process is listening on IPv4 only.
       (_) => _connectToBackend('http://127.0.0.1:8001', 'CREW-DEMO'),
     );
   }
@@ -92,6 +95,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
       api.session = session;
       final sessionInfo = await api.fetchSession();
       final loaded = await api.fetchRequests();
+      final loadedSeats = await api.fetchSeatMap();
       events = api.connectToEvents().listen(
         _handleEvent,
         onError: (_) =>
@@ -99,6 +103,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
       );
       setState(() {
         requests = loaded;
+        seats = loadedSeats;
         connected = true;
         loading = false;
         selectedId = loaded.firstOrNull?.id;
@@ -109,7 +114,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
       if (!mounted) return;
       setState(() {
         loading = false;
-        error = 'Backend unavailable. Start the communication backend, then tap Connect backend.';
+        error = 'Could not connect to $baseUrl. $exception';
       });
     }
   }
@@ -152,11 +157,13 @@ class _CrewDashboardState extends State<CrewDashboard> {
     if (!connected) return;
     try {
       final updated = await api.updateStatus(request, status);
-      setState(
-        () => requests = requests
+      final updatedSeats = await api.fetchSeatMap();
+      setState(() {
+        requests = requests
             .map((item) => item.id == updated.id ? updated : item)
-            .toList(),
-      );
+            .toList();
+        seats = updatedSeats;
+      });
     } catch (exception) {
       setState(
         () => requests = requests
@@ -179,20 +186,15 @@ class _CrewDashboardState extends State<CrewDashboard> {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) => Row(
-          children: [
-            SideRail(newCount: requests.where((item) => item.isNew).length),
-            Expanded(
-              child: Column(
-                children: [
-                  TopBar(connected: connected, onConnect: connect),
-                  Expanded(child: _body(constraints.maxWidth)),
-                ],
-              ),
+      child: Column(
+        children: [
+          TopBar(connected: connected, onConnect: connect),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) => _body(constraints.maxWidth),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     ),
   );
@@ -200,32 +202,41 @@ class _CrewDashboardState extends State<CrewDashboard> {
   Widget _body(double width) => SingleChildScrollView(
     padding: const EdgeInsets.fromLTRB(22, 18, 22, 24),
     child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         _flightHeading(),
         const SizedBox(height: 16),
         _stats(),
         const SizedBox(height: 18),
         if (error != null) _errorBanner(),
         SizedBox(
-          height: width > 1180 ? (requests.isEmpty ? 320 : 570) : 760,
+          height: width > 1180 ? (requests.isEmpty ? 300 : 460) : 680,
           child: width > 1180 ? _wideContent() : _stackedContent(),
         ),
         const SizedBox(height: 18),
         SizedBox(
-          height: 210,
+          height: 220,
           child: width > 1180
               ? Row(
                   children: [
-                    Expanded(child: SeatMap(requests: requests)),
+                    Expanded(child: SeatMap(seats: seats)),
                     const SizedBox(width: 16),
                     SizedBox(
                       width: 300,
-                      child: QuickActions(onConnect: connect),
+                      child: QuickActions(
+                        pendingCount: requests
+                            .where((item) => item.isNew)
+                            .length,
+                        urgentCount: requests
+                            .where((item) => item.isUrgent)
+                            .length,
+                        onRefresh: connect,
+                        onFilter: (value) => setState(() => filter = value),
+                      ),
                     ),
                   ],
                 )
-              : SeatMap(requests: requests),
+              : SeatMap(seats: seats),
         ),
       ],
     ),
@@ -250,7 +261,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
         child: RequestDetails(request: selected, onStatus: changeStatus),
       ),
       const SizedBox(width: 14),
-      Expanded(flex: 2, child: PassengerInfo(request: selected)),
+      Expanded(flex: 3, child: PassengerInfo(request: selected)),
     ],
   );
 
@@ -399,57 +410,62 @@ class SideRail extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(16, 20, 12, 16),
     child: SingleChildScrollView(
       child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 10, bottom: 26),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'HUSHIT',
-                style: TextStyle(
-                  color: red,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 23,
-                  letterSpacing: 1.3,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 10, bottom: 26),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'HUSHIT',
+                  style: TextStyle(
+                    color: red,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 23,
+                    letterSpacing: 1.3,
+                  ),
                 ),
-              ),
-              Text(
-                'Every language. One journey.',
-                style: TextStyle(fontSize: 9, color: Colors.black54),
-              ),
-            ],
-          ),
-        ),
-        _nav(Icons.home_outlined, 'Overview', true),
-        _nav(Icons.chat_bubble_outline, 'Live Requests', false, badge: '$newCount'),
-        _nav(Icons.forum_outlined, 'Conversations', false),
-        _nav(Icons.airline_seat_recline_normal, 'Cabin Map', false),
-        _nav(Icons.campaign_outlined, 'Announcements', false),
-        _nav(Icons.person_outline, 'Passenger Preferences', false),
-        _nav(Icons.verified_user_outlined, 'Exit-row Checks', false),
-        _nav(Icons.nightlight_outlined, 'Quiet-seat Check-ins', false),
-        _nav(Icons.bar_chart_outlined, 'System Status', false),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.help_outline, size: 20, color: navy),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Need help?\nQuick guides and support',
-                  style: TextStyle(fontSize: 11, color: navy),
+                Text(
+                  'Every language. One journey.',
+                  style: TextStyle(fontSize: 9, color: Colors.black54),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          _nav(Icons.home_outlined, 'Overview', true),
+          _nav(
+            Icons.chat_bubble_outline,
+            'Live Requests',
+            false,
+            badge: '$newCount',
+          ),
+          _nav(Icons.forum_outlined, 'Conversations', false),
+          _nav(Icons.airline_seat_recline_normal, 'Cabin Map', false),
+          _nav(Icons.campaign_outlined, 'Announcements', false),
+          _nav(Icons.person_outline, 'Passenger Preferences', false),
+          _nav(Icons.verified_user_outlined, 'Exit-row Checks', false),
+          _nav(Icons.nightlight_outlined, 'Quiet-seat Check-ins', false),
+          _nav(Icons.bar_chart_outlined, 'System Status', false),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.help_outline, size: 20, color: navy),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Need help?\nQuick guides and support',
+                    style: TextStyle(fontSize: 11, color: navy),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     ),
@@ -504,73 +520,72 @@ class TopBar extends StatelessWidget {
   final VoidCallback onConnect;
   @override
   Widget build(BuildContext context) => Container(
-    height: 75,
-    padding: const EdgeInsets.symmetric(horizontal: 22),
+    width: double.infinity,
+    height: 60,
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
     decoration: const BoxDecoration(
       color: Colors.white,
       border: Border(bottom: BorderSide(color: border)),
     ),
     child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-        const ConnectionChip(
-          icon: Icons.wifi,
-          label: 'Aircraft Network',
-          value: 'Connected',
-          color: Color(0xFF16A56A),
-        ),
-        const SizedBox(width: 10),
-        const ConnectionChip(
-          icon: Icons.cloud_outlined,
-          label: 'Internet',
-          value: 'Limited',
-          color: Color(0xFFE5A11B),
-        ),
-        const SizedBox(width: 10),
-        const ConnectionChip(
-          icon: Icons.devices_outlined,
-          label: 'Connected Devices',
-          value: '218 / 238',
-          color: navy,
-        ),
-        const SizedBox(width: 20),
-        Text(
-          connected ? 'Live backend' : 'Not connected',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: connected ? const Color(0xFF16A56A) : Colors.black54,
+      child: Row(
+        children: [
+          const ConnectionChip(
+            icon: Icons.wifi,
+            label: 'Aircraft Network',
+            value: 'Connected',
+            color: Color(0xFF16A56A),
           ),
-        ),
-        const SizedBox(width: 12),
-        FilledButton.icon(
-          onPressed: onConnect,
-          icon: Icon(connected ? Icons.sync : Icons.link, size: 17),
-          label: Text(connected ? 'Refresh connection' : 'Connect backend'),
-          style: FilledButton.styleFrom(
-            backgroundColor: red,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          const SizedBox(width: 10),
+          const ConnectionChip(
+            icon: Icons.cloud_outlined,
+            label: 'Internet',
+            value: 'Limited',
+            color: Color(0xFFE5A11B),
           ),
-        ),
-        const SizedBox(width: 12),
-        const CircleAvatar(
-          radius: 21,
-          backgroundColor: Color(0xFFFFE3E7),
-          child: Icon(Icons.person, color: red),
-        ),
-        const SizedBox(width: 8),
-        const Text(
-          'Cabin Crew\nA. Tanaka',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
+          const SizedBox(width: 10),
+          const ConnectionChip(
+            icon: Icons.devices_outlined,
+            label: 'Connected Devices',
+            value: '218 / 238',
             color: navy,
           ),
-        ),
-          ],
-        ),
+          const SizedBox(width: 20),
+          Text(
+            connected ? 'Live backend' : 'Not connected',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: connected ? const Color(0xFF16A56A) : Colors.black54,
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.icon(
+            onPressed: onConnect,
+            icon: Icon(connected ? Icons.sync : Icons.link, size: 17),
+            label: Text(connected ? 'Refresh connection' : 'Connect backend'),
+            style: FilledButton.styleFrom(
+              backgroundColor: red,
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+              minimumSize: const Size(0, 40),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const CircleAvatar(
+            radius: 18,
+            backgroundColor: Color(0xFFFFE3E7),
+            child: Icon(Icons.person, color: red),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Cabin Crew\nA. Tanaka',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: navy,
+            ),
+          ),
+        ],
       ),
     ),
   );
@@ -590,14 +605,15 @@ class ConnectionChip extends StatelessWidget {
   final Color color;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
       border: Border.all(color: border),
       borderRadius: BorderRadius.circular(9),
     ),
     child: Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: color, size: 18),
+        Icon(icon, color: color, size: 16),
         const SizedBox(width: 7),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -640,7 +656,7 @@ class StatCard extends StatelessWidget {
     onTap: onTap,
     borderRadius: BorderRadius.circular(12),
     child: Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: border),
@@ -649,40 +665,40 @@ class StatCard extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 38,
-            height: 38,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: color.withValues(alpha: .1),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: color, size: 21),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 22,
-                  color: color,
-                  fontWeight: FontWeight.w900,
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 19,
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-              Text(
-                label,
-                style: const TextStyle(fontSize: 11, color: Colors.black54),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'View all  →',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: color,
-                  fontWeight: FontWeight.w700,
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
                 ),
-              ),
+                const SizedBox(height: 2),
+                Text(
+                  'View all  →',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
@@ -840,57 +856,70 @@ class RequestRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-          SizedBox(
-            width: 42,
-            child: Text(
-              request.seat,
-              style: TextStyle(
-                color: request.isUrgent ? red : navy,
-                fontWeight: FontWeight.w900,
+            SizedBox(
+              width: 42,
+              child: Text(
+                request.seat,
+                style: TextStyle(
+                  color: request.isUrgent ? red : navy,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-          ),
-          SizedBox(
-            width: 120,
-            child: Row(
-              children: [
-                Icon(_categoryIcon(request.category), size: 17, color: navy),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    request.category,
-                    style: const TextStyle(fontSize: 12, color: navy),
-                    overflow: TextOverflow.ellipsis,
+            SizedBox(
+              width: 120,
+              child: Row(
+                children: [
+                  Icon(_categoryIcon(request.category), size: 17, color: navy),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      request.category,
+                      style: const TextStyle(fontSize: 12, color: navy),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          SizedBox(
-            width: 75,
-            child: Text(
-              request.passengerLanguage,
-              style: const TextStyle(fontSize: 11, color: Colors.black54),
+            SizedBox(
+              width: 75,
+              child: Text(
+                request.passengerLanguage,
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
+              ),
             ),
-          ),
-          SizedBox(
-            width: 48,
-            child: Text(
-              _time(request.createdAt),
-              style: const TextStyle(fontSize: 11, color: Colors.black54),
+            SizedBox(
+              width: 48,
+              child: Text(
+                _time(request.createdAt),
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
+              ),
             ),
-          ),
-          SizedBox(width: 80, child: StatusPill(status: request.status)),
-          SizedBox(
-            width: 56,
-            child: request.isUrgent
-                ? const StatusPill(status: 'urgent')
-                : const Text(
-                    'Normal',
-                    style: TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
-          ),
-          const Icon(Icons.chevron_right, size: 18, color: Colors.black38),
+            SizedBox(
+              width: 88,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: StatusPill(status: request.status),
+              ),
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 68,
+              child: request.isUrgent
+                  ? const Align(
+                      alignment: Alignment.centerLeft,
+                      child: StatusPill(status: 'urgent'),
+                    )
+                  : const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Normal',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: Colors.black38),
           ],
         ),
       ),
@@ -993,31 +1022,51 @@ class RequestDetails extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
+                child: FilledButton.icon(
                   onPressed: current.status == 'created'
                       ? () => onStatus('acknowledged')
                       : null,
                   icon: const Icon(Icons.check),
-                  label: const Text('Acknowledge'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: red,
-                    side: const BorderSide(color: red),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Acknowledge'),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: red,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 10,
+                    ),
+                    minimumSize: const Size(0, 42),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: OutlinedButton.icon(
+                child: FilledButton.icon(
                   onPressed: current.status == 'acknowledged'
                       ? () => onStatus('in_progress')
                       : null,
                   icon: const Icon(Icons.schedule),
-                  label: const Text('In Progress'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: red,
-                    side: const BorderSide(color: red),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('In Progress'),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFE5A11B),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 10,
+                    ),
+                    minimumSize: const Size(0, 42),
                   ),
                 ),
               ),
@@ -1028,10 +1077,21 @@ class RequestDetails extends StatelessWidget {
                       ? () => onStatus('fulfilled')
                       : null,
                   icon: const Icon(Icons.check),
-                  label: const Text('Complete'),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Complete'),
+                  ),
                   style: FilledButton.styleFrom(
-                    backgroundColor: red,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor: const Color(0xFF16A56A),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 10,
+                    ),
+                    minimumSize: const Size(0, 42),
                   ),
                 ),
               ),
@@ -1063,7 +1123,7 @@ class RequestDetails extends StatelessWidget {
                     title,
                     style: const TextStyle(fontSize: 10, color: Colors.black54),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     text,
                     style: const TextStyle(
@@ -1093,80 +1153,82 @@ class PassengerInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Panel(
     title: 'Passenger Information',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Center(
-          child: CircleAvatar(
-            radius: 28,
-            backgroundColor: Color(0xFFFFE4E8),
-            child: Icon(Icons.person, color: red, size: 30),
+    child: SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Center(
+            child: CircleAvatar(
+              radius: 28,
+              backgroundColor: Color(0xFFFFE4E8),
+              child: Icon(Icons.person, color: red, size: 30),
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        InfoLine(
-          icon: Icons.translate,
-          label: 'Preferred Language',
-          value: request?.passengerLanguage ?? '—',
-        ),
-        const InfoLine(
-          icon: Icons.record_voice_over_outlined,
-          label: 'Communication Method',
-          value: 'Text and Voice',
-        ),
-        const InfoLine(
-          icon: Icons.text_fields,
-          label: 'Text Size',
-          value: 'Large',
-        ),
-        const InfoLine(
-          icon: Icons.volume_up_outlined,
-          label: 'Read Messages Aloud',
-          value: 'Enabled',
-        ),
-        const InfoLine(
-          icon: Icons.wifi_off,
-          label: 'Offline Language Kit',
-          value: 'Ready',
-          good: true,
-        ),
-        const Spacer(),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(11),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(9),
+          const SizedBox(height: 12),
+          InfoLine(
+            icon: Icons.translate,
+            label: 'Preferred Language',
+            value: request?.passengerLanguage ?? '—',
           ),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Greeting Coach',
-                style: TextStyle(fontWeight: FontWeight.w800, color: navy),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Say hello in Tamil',
-                style: TextStyle(fontSize: 10, color: Colors.black54),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'வணக்கம்!',
-                style: TextStyle(
-                  fontSize: 17,
-                  color: navy,
-                  fontWeight: FontWeight.w800,
+          const InfoLine(
+            icon: Icons.record_voice_over_outlined,
+            label: 'Communication Method',
+            value: 'Text and Voice',
+          ),
+          const InfoLine(
+            icon: Icons.text_fields,
+            label: 'Text Size',
+            value: 'Large',
+          ),
+          const InfoLine(
+            icon: Icons.volume_up_outlined,
+            label: 'Read Messages Aloud',
+            value: 'Enabled',
+          ),
+          const InfoLine(
+            icon: Icons.wifi_off,
+            label: 'Offline Language Kit',
+            value: 'Ready',
+            good: true,
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Greeting Coach',
+                  style: TextStyle(fontWeight: FontWeight.w800, color: navy),
                 ),
-              ),
-              Text(
-                'Vanakkam!',
-                style: TextStyle(fontSize: 11, color: Colors.black54),
-              ),
-            ],
+                SizedBox(height: 4),
+                Text(
+                  'Say hello in Tamil',
+                  style: TextStyle(fontSize: 10, color: Colors.black54),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'வணக்கம்!',
+                  style: TextStyle(
+                    fontSize: 17,
+                    color: navy,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  'Vanakkam!',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }
@@ -1210,53 +1272,127 @@ class InfoLine extends StatelessWidget {
 }
 
 class SeatMap extends StatelessWidget {
-  const SeatMap({super.key, required this.requests});
-  final List<CrewRequest> requests;
+  const SeatMap({super.key, required this.seats});
+  final List<CrewSeat> seats;
   @override
   Widget build(BuildContext context) => Panel(
     title: 'Cabin Seat Map',
-    trailing: 'No request  •  Pending  •  In progress  •  Completed',
-    child: Center(
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        children: List.generate(36, (index) {
-          final seat =
-              '${(index ~/ 6) + 1}${String.fromCharCode(65 + (index % 6))}';
-          final request = requests
-              .where((item) => item.seat == seat)
-              .firstOrNull;
-          final color = request == null
-              ? const Color(0xFFDDE2E8)
-              : request.isUrgent
-              ? red
-              : request.status == 'fulfilled'
-              ? const Color(0xFF46B682)
-              : request.status == 'in_progress'
-              ? const Color(0xFF65A9E8)
-              : const Color(0xFFE5A11B);
-          return Container(
-            width: 18,
-            height: 18,
-            margin: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(4),
+    trailing: seats.isEmpty ? 'Waiting for seat map' : '${seats.length} seats',
+    child: seats.isEmpty
+        ? const Center(child: Text('Connect to load the aircraft seat map'))
+        : _horizontalAircraftMap(),
+  );
+
+  Widget _horizontalAircraftMap() {
+    final bySeat = {
+      for (final seat in seats) '${seat.rowNumber}:${seat.column}': seat,
+    };
+    final maxRow = seats
+        .map((seat) => seat.rowNumber)
+        .fold<int>(0, (max, row) => row > max ? row : max);
+    const columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(width: 25),
+              for (var row = 1; row <= maxRow; row++) _mapHeaderCell(row),
+            ],
+          ),
+          const SizedBox(height: 3),
+          for (final column in columns) ...[
+            Row(
+              children: [
+                SizedBox(
+                  width: 25,
+                  child: Text(
+                    column,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                for (var row = 1; row <= maxRow; row++)
+                  _seatCell(bySeat['$row:$column']),
+              ],
             ),
-            child: Tooltip(
-              message:
-                  '$seat${request == null ? '' : ' • ${request.category}'}',
-              child: const SizedBox(),
-            ),
-          );
-        }),
+            if (column == 'B' || column == 'F') const SizedBox(height: 2),
+          ],
+        ],
       ),
+    );
+  }
+
+  Widget _mapHeaderCell(int row) => SizedBox(
+    width: 24,
+    child: Text(
+      '$row',
+      textAlign: TextAlign.center,
+      style: const TextStyle(fontSize: 8, color: Colors.black54),
     ),
   );
+
+  Widget _seatCell(CrewSeat? seat) {
+    if (seat == null) return const SizedBox(width: 24, height: 17);
+    final color = seat.hasRequest
+        ? seat.isUrgent
+              ? red
+              : seat.requestStatus == 'fulfilled'
+              ? const Color(0xFF46B682)
+              : seat.requestStatus == 'in_progress'
+              ? const Color(0xFF65A9E8)
+              : const Color(0xFFE5A11B)
+        : seat.occupancyStatus == 'occupied'
+        ? const Color(0xFF9AA5B1)
+        : const Color(0xFFE1E5EA);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: Tooltip(
+        message:
+            '${seat.seatNumber} • ${seat.requestCategory ?? seat.occupancyStatus}',
+        child: Container(
+          width: 22,
+          height: 15,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.white, width: 1),
+          ),
+          child: Text(
+            seat.column,
+            style: TextStyle(
+              fontSize: 8,
+              color: seat.hasRequest || seat.occupancyStatus == 'occupied'
+                  ? Colors.white
+                  : navy,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class QuickActions extends StatelessWidget {
-  const QuickActions({super.key, required this.onConnect});
-  final VoidCallback onConnect;
+  const QuickActions({
+    super.key,
+    required this.pendingCount,
+    required this.urgentCount,
+    required this.onRefresh,
+    required this.onFilter,
+  });
+  final int pendingCount;
+  final int urgentCount;
+  final VoidCallback onRefresh;
+  final ValueChanged<String> onFilter;
   @override
   Widget build(BuildContext context) => Panel(
     title: 'Quick Actions',
@@ -1265,24 +1401,21 @@ class QuickActions extends StatelessWidget {
       runSpacing: 12,
       children: [
         ActionButton(
-          icon: Icons.campaign_outlined,
-          label: 'Make Announcement',
-          onTap: () {},
+          icon: Icons.mark_chat_unread_outlined,
+          label: 'New requests',
+          value: '$pendingCount',
+          onTap: () => onFilter('New'),
         ),
         ActionButton(
-          icon: Icons.article_outlined,
-          label: 'View Announcements',
-          onTap: () {},
+          icon: Icons.priority_high_outlined,
+          label: 'Needs attention',
+          value: '$urgentCount',
+          onTap: () => onFilter('All'),
         ),
         ActionButton(
-          icon: Icons.verified_user_outlined,
-          label: 'Exit-row Checks',
-          onTap: () {},
-        ),
-        ActionButton(
-          icon: Icons.nightlight_outlined,
-          label: 'Refresh Data',
-          onTap: onConnect,
+          icon: Icons.refresh,
+          label: 'Refresh queue',
+          onTap: onRefresh,
         ),
       ],
     ),
@@ -1295,9 +1428,11 @@ class ActionButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.value,
   });
   final IconData icon;
   final String label;
+  final String? value;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => InkWell(
@@ -1317,7 +1452,7 @@ class ActionButton extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            label,
+            value == null ? label : '$label  ·  $value',
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 10,

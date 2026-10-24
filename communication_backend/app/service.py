@@ -43,6 +43,10 @@ def row_to_request(row) -> dict:
     return {"id": row["id"], "flight_id": row["flight_id"], "passenger_device_id": row["passenger_device_id"], "seat_token": row["seat_token"], "seat_number": row["seat_number"], "passenger_language": row["passenger_language"], "category": row["category"], "message": row["message"], "urgency": row["urgency"], "status": row["status"], "assigned_crew_device_id": row["assigned_crew_device_id"], "created_at": row["created_at"], "updated_at": row["updated_at"]}
 
 
+def row_to_seat(row) -> dict:
+    return {"flight_id": row["flight_id"], "seat_number": row["seat_number"], "row_number": row["row_number"], "seat_column": row["seat_column"], "seat_order": row["seat_order"], "cabin_class": row["cabin_class"], "seat_type": row["seat_type"], "occupancy_status": row["occupancy_status"], "request_id": row["request_id"], "request_category": row["request_category"], "request_status": row["request_status"], "request_urgency": row["request_urgency"]}
+
+
 def pair_device(payload: PairDeviceRequest) -> dict:
     if payload.device_type == "crew" and not hmac.compare_digest(payload.pairing_code or "", settings.crew_pairing_code):
         raise HTTPException(status_code=403, detail="Invalid crew pairing code")

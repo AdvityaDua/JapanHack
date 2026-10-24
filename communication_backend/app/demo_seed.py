@@ -20,6 +20,23 @@ DEMO_REQUESTS = (
 )
 
 
+def seed_demo_seat_map() -> int:
+    """Create a realistic 30-row 2-4-2 aircraft layout once."""
+    columns = ("A", "B", "C", "D", "E", "F", "G", "H")
+    inserted = 0
+    occupied = {"3C", "5F", "9B", "16G", "22D"}
+    for row_number in range(1, 31):
+        for seat_order, column in enumerate(columns):
+            seat_number = f"{row_number}{column}"
+            seat_type = "window" if column in {"A", "H"} else "aisle" if column in {"B", "C", "F", "G"} else "middle"
+            before = store.list_seats(settings.flight_id)
+            if any(row["seat_number"] == seat_number for row in before):
+                continue
+            store.save_seat({"flight_id": settings.flight_id, "seat_number": seat_number, "row_number": row_number, "seat_column": column, "seat_order": seat_order, "cabin_class": "business" if row_number <= 4 else "economy", "seat_type": seat_type, "occupancy_status": "occupied" if seat_number in occupied else "available"})
+            inserted += 1
+    return inserted
+
+
 def seed_demo_data() -> int:
     """Insert demo passenger devices and requests once; return new request count."""
     inserted = 0

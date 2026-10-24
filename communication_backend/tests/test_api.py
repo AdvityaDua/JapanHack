@@ -11,6 +11,7 @@ def client(tmp_path, monkeypatch):
     import app.store as store_module
 
     monkeypatch.setattr(config.settings, "database_path", str(tmp_path / "test.db"))
+    monkeypatch.setattr(config.settings, "demo_seed", False)
     store_module.store.path = config.settings.database_path
     store_module.store.init()
     import app.main as main
@@ -30,6 +31,22 @@ def test_health_and_current_session(client):
     response = client.get("/api/v1/session/current")
     assert response.status_code == 200
     assert response.json()["status"] == "boarding"
+
+
+def test_crew_seat_map_returns_aircraft_layout(client):
+    from app.demo_seed import seed_demo_seat_map
+
+    seed_demo_seat_map()
+    crew = pair(client, "crew", display_name="Crew 1", pairing_code="CREW-DEMO")
+    response = client.get(
+        "/api/v1/crew/seat-map",
+        headers={"Authorization": f"Bearer {crew['device_token']}"},
+    )
+    assert response.status_code == 200
+    seats = response.json()
+    assert len(seats) == 240
+    assert seats[0]["seat_number"] == "1A"
+    assert seats[0]["cabin_class"] == "business"
 
 
 def test_passenger_request_reaches_crew_queue(client):

@@ -136,6 +136,25 @@ Authorization: Bearer {device_token}
 
 ```http
 GET /api/v1/crew/requests
+
+GET /api/v1/crew/seat-map
+
+Returns the aircraft's ordered seat map. Each seat includes its cabin class,
+seat type, occupancy state, and the latest active communication request mapped
+to that seat when one exists. The crew device token is required.
+
+```json
+{
+  "seat_number": "24A",
+  "row_number": 24,
+  "seat_column": "A",
+  "cabin_class": "economy",
+  "seat_type": "window",
+  "occupancy_status": "available",
+  "request_status": "created",
+  "request_category": "water"
+}
+```
 Authorization: Bearer {crew_device_token}
 ```
 

@@ -12,7 +12,7 @@ from app.realtime import manager
 from app.routes import make_router
 from app.service import handle_mqtt_command
 from app.store import store
-from app.demo_seed import seed_demo_data
+from app.demo_seed import seed_demo_data, seed_demo_seat_map
 
 logging.basicConfig(level=logging.INFO)
 
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     store.init()
     store.seed_session({"id": settings.flight_id, "flight_number": settings.flight_number, "aircraft_identifier": settings.aircraft_identifier, "status": "boarding", "started_at": now_iso()})
     if settings.demo_seed:
+        seed_demo_seat_map()
         seed_demo_data()
     manager.set_loop(asyncio.get_running_loop())
     bus.start()
