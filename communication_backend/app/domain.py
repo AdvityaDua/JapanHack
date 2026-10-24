@@ -1,6 +1,12 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime, timezone
+from enum import Enum
+
+try:
+    from enum import StrEnum
+except ImportError:  # Python 3.10 compatibility
+    class StrEnum(str, Enum):
+        pass
 from uuid import UUID, uuid4
 
 
@@ -57,7 +63,7 @@ def new_id() -> str:
 
 
 def now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def validate_transition(current: str, target: str) -> None:

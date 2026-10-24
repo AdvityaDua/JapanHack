@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -28,7 +28,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def create_access_token(subject: str) -> str:
-    expires = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     return jwt.encode({"sub": subject, "exp": expires}, signing_key(), algorithm=ALGORITHM)
 
 

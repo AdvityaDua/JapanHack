@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -30,11 +30,11 @@ def require_partner_client(x_api_key: Annotated[str | None, Header()] = None, db
     if not x_api_key:
         raise HTTPException(status_code=401, detail="X-API-Key header is required")
     api_key = db.scalar(select(APIKey).where(APIKey.key_hash == hash_api_key(x_api_key)))
-    if not api_key or api_key.revoked_at or (api_key.expires_at and api_key.expires_at < datetime.now(UTC)):
+    if not api_key or api_key.revoked_at or (api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc)):
         raise HTTPException(status_code=401, detail="Invalid or expired API key")
     client = db.get(APIClient, api_key.api_client_id)
     if not client or client.status != "active":
         raise HTTPException(status_code=403, detail="API client is inactive")
-    api_key.last_used_at = datetime.now(UTC)
+    api_key.last_used_at = datetime.now(timezone.utc)
     db.commit()
     return client

@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import json
 import time
-from datetime import UTC, datetime
 
 from fastapi import HTTPException
 

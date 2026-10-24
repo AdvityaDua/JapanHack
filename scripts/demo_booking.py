@@ -11,7 +11,7 @@ import json
 import os
 import sys
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -43,7 +43,7 @@ def seed_partner() -> str:
                 api_client_id=client.id,
                 key_prefix=api_key[:12],
                 key_hash=hash_api_key(api_key),
-                expires_at=datetime.now(UTC) + timedelta(hours=2),
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
             )
         )
         db.commit()

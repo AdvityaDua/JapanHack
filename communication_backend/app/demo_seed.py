@@ -1,7 +1,7 @@
 """Deterministic local demo data for the aircraft-edge prototype."""
 
 import hashlib
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 from app.domain import new_id
@@ -40,7 +40,7 @@ def seed_demo_seat_map() -> int:
 def seed_demo_data() -> int:
     """Insert demo passenger devices and requests once; return new request count."""
     inserted = 0
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     for seat, language, category, message, urgency, status, age_minutes in DEMO_REQUESTS:
         request_id = f"demo-{seat.lower()}"
         if store.get_request(request_id):
