@@ -155,37 +155,9 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
       if (open == true && mounted) go(PreflightScreen(profile: p, repo: r));
       return;
     }
-    // A booking is the first prerequisite for the in-flight screen. Once the
-    // passenger has a seat, require the offline model cache before enabling
-    // translation so a flight without connectivity cannot fail halfway through.
-    if (translationReady != true) {
-      final open = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          icon: const Icon(
-            Icons.download_for_offline_rounded,
-            color: warn,
-            size: 36,
-          ),
-          title: const Text('Download language models first'),
-          content: const Text(
-            'Offline translation is not ready on this phone. Open Before flight and download the required models on Wi-Fi before using in-flight translation.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Not now'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Open setup'),
-            ),
-          ],
-        ),
-      );
-      if (open == true && mounted) go(PreflightScreen(profile: p, repo: r));
-      return;
-    }
+    // Model readiness belongs to the translation feature, not navigation.
+    // Passengers must still be able to open the in-flight cards and contact
+    // the crew when the language kit has not been downloaded yet.
     go(InFlightScreen(session: ensureSession(), repo: r));
   }
 

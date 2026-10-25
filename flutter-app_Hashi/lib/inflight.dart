@@ -8,6 +8,7 @@ import 'content.dart';
 import 'decks.dart';
 import 'discover.dart';
 import 'hubs.dart';
+import 'kit.dart';
 import 'protocol.dart';
 import 'repo.dart';
 import 'session.dart';
@@ -48,6 +49,9 @@ class _InFlightScreenState extends State<InFlightScreen> {
   Timer? _searchTimer;
   bool _searching = false;
   bool _notFound = false;
+  bool? _translationReady;
+  bool _downloadingTranslation = false;
+  String? _translationError;
 
   CabinSession get s => widget.session;
   String get lang => s.profile.lang;
@@ -103,6 +107,7 @@ class _InFlightScreenState extends State<InFlightScreen> {
   @override
   void initState() {
     super.initState();
+    _checkTranslationModels();
     if (widget.autoJoin) {
       _search();
       _searchTimer = Timer.periodic(
@@ -116,6 +121,34 @@ class _InFlightScreenState extends State<InFlightScreen> {
       loadFlightCards().then((list) {
         if (mounted) setState(() => byId = {for (final c in list) c.id: c});
       });
+    }
+  }
+
+  Future<void> _checkTranslationModels() async {
+    try {
+      final ready = await Kit.ready(lang);
+      if (mounted) setState(() => _translationReady = ready);
+    } catch (e) {
+      if (mounted) setState(() => _translationError = e.toString());
+    }
+  }
+
+  Future<void> _downloadTranslationModels() async {
+    if (!s.link.online) return;
+    setState(() {
+      _downloadingTranslation = true;
+      _translationError = null;
+    });
+    try {
+      for (final model in Kit.needed(lang)) {
+        if (!await Kit.has(model)) await Kit.download(model);
+      }
+      final ready = await Kit.ready(lang);
+      if (mounted) setState(() => _translationReady = ready);
+    } catch (e) {
+      if (mounted) setState(() => _translationError = e.toString());
+    } finally {
+      if (mounted) setState(() => _downloadingTranslation = false);
     }
   }
 
@@ -234,6 +267,10 @@ class _InFlightScreenState extends State<InFlightScreen> {
             ),
             const SizedBox(height: 14),
             SpeakBar(lang: lang, session: s),
+            if (_translationReady != true) ...[
+              const SizedBox(height: 12),
+              _translationKitCard(),
+            ],
             if (s.store.link != LinkState.online)
               Align(
                 alignment: Alignment.centerLeft,
@@ -370,6 +407,65 @@ class _InFlightScreenState extends State<InFlightScreen> {
       },
     );
   }
+
+  Widget _translationKitCard() => PaperCard(
+    spine: warn,
+    color: const Color(0xFFFFF5E1),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.translate_rounded, color: warn, size: 26),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Translation kit not ready',
+                style: TextStyle(fontWeight: FontWeight.w800, color: sumi),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                s.link.online
+                    ? 'You are connected to the aircraft network. Download the language kit here, or use cards and crew assistance without it.'
+                    : 'Cards and crew assistance work now. Connect to the aircraft Wi-Fi to download translation models.',
+                style: const TextStyle(color: sumiSoft, height: 1.3),
+              ),
+              if (_translationError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: Text(
+                    _translationError!,
+                    style: const TextStyle(color: bad, fontSize: 12),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: !s.link.online || _downloadingTranslation
+                    ? null
+                    : _downloadTranslationModels,
+                icon: _downloadingTranslation
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.download_rounded),
+                label: Text(
+                  _downloadingTranslation
+                      ? 'Downloading…'
+                      : 'Download for translation',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 
   String _label(String intent) {
     final c = byId[intent];
