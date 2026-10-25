@@ -132,7 +132,10 @@ class SherpaSpeechEngine implements SpeechEngine {
       } catch (e) {
         if (!out.isClosed) {
           out.add(SpeechEvent('', error: e.toString()));
-          await out.close();
+          // Do not await the close from inside the producer's error path.
+          // The listener receives the error and onDone completes normally;
+          // awaiting here can keep a failed worker alive during teardown.
+          unawaited(out.close());
         }
       }
     }();

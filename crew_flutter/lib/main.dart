@@ -50,6 +50,8 @@ class _CrewDashboardState extends State<CrewDashboard> {
   String flightNumber = 'JL 030';
   String flightStatus = 'In flight';
   StreamSubscription<Map<String, dynamic>>? events;
+  Timer? eventReconnect;
+  int lastEventSequence = 0;
 
   @override
   void initState() {
@@ -72,6 +74,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
 
   @override
   void dispose() {
+    eventReconnect?.cancel();
     events?.cancel();
     api.dispose();
     super.dispose();
@@ -90,9 +93,11 @@ class _CrewDashboardState extends State<CrewDashboard> {
     setState(() {
       loading = true;
       error = null;
+      connected = false;
     });
     try {
       events?.cancel();
+      eventReconnect?.cancel();
       api.dispose();
       api = CrewApi(baseUrl);
       final session = await api.pair(pairingCode);
@@ -100,11 +105,6 @@ class _CrewDashboardState extends State<CrewDashboard> {
       final sessionInfo = await api.fetchSession();
       final loaded = await api.fetchRequests();
       final loadedSeats = await api.fetchSeatMap();
-      events = api.connectToEvents().listen(
-        _handleEvent,
-        onError: (_) =>
-            _showError('Live updates disconnected; refresh to retry.'),
-      );
       setState(() {
         requests = loaded;
         seats = loadedSeats;
@@ -114,6 +114,8 @@ class _CrewDashboardState extends State<CrewDashboard> {
         flightNumber = sessionInfo['flight_number']?.toString() ?? flightNumber;
         flightStatus = sessionInfo['status']?.toString() ?? flightStatus;
       });
+      lastEventSequence = 0;
+      _openEventStream();
     } catch (exception) {
       if (!mounted) return;
       setState(() {
@@ -123,12 +125,50 @@ class _CrewDashboardState extends State<CrewDashboard> {
     }
   }
 
+  void _openEventStream() {
+    if (!mounted || !connected) return;
+    eventReconnect?.cancel();
+    eventReconnect = null;
+    events?.cancel();
+    events = api.connectToEvents().listen(
+      _handleEvent,
+      onError: (_) => _scheduleEventReconnect(),
+      onDone: _scheduleEventReconnect,
+      cancelOnError: true,
+    );
+    _replayEvents();
+  }
+
+  Future<void> _replayEvents() async {
+    try {
+      final replayed = await api.fetchEvents(afterSequence: lastEventSequence);
+      for (final event in replayed) {
+        _handleEvent(event);
+      }
+    } catch (_) {
+      _scheduleEventReconnect();
+    }
+  }
+
+  void _scheduleEventReconnect() {
+    if (!mounted || !connected || eventReconnect != null) return;
+    eventReconnect = Timer(const Duration(seconds: 2), () {
+      eventReconnect = null;
+      _openEventStream();
+    });
+  }
+
   void _handleEvent(Map<String, dynamic> event) {
+    final sequence = event['sequence'];
+    if (sequence is num && sequence.toInt() > lastEventSequence) {
+      lastEventSequence = sequence.toInt();
+    }
     final payload =
         (event['payload'] as Map?)?.cast<String, dynamic>() ??
         <String, dynamic>{};
     final id = event['aggregate_id']?.toString();
     if (id == null) return;
+    if (!mounted) return;
     setState(() {
       if (event['event_type'] == 'request.created') {
         requests = [

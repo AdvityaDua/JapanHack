@@ -75,7 +75,7 @@ void main() {
     final seen = <List<String>>[];
     await show(t, const CabinConnection(CabinState.notFound), profile: Profile(lang: 'hi', server: 'http://192.168.137.1:8000'), seen: seen);
     expect(seen.first.first, 'http://192.168.137.1:8000');
-    expect(seen.first, contains('http://hashi-cabin.local:8000'));
+    expect(seen.first, contains('http://hashi-cabin.local:8001'));
   });
 
   testWidgets('each problem has its own message and does not enable the cabin', (t) async {

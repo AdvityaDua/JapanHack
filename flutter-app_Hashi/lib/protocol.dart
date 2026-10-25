@@ -94,8 +94,8 @@ class Announcement {
   final String id;
   final String? phrase;
   final String? custom;
-  final Map<String, String>
-  texts; // free announcements: text per language (the server translated it)
+  final Map<String, String> texts;
+  final String sourceLanguage;
   final String kind;
   final String icon;
   const Announcement({
@@ -103,6 +103,7 @@ class Announcement {
     required this.phrase,
     required this.custom,
     required this.texts,
+    required this.sourceLanguage,
     required this.kind,
     required this.icon,
   });
@@ -115,6 +116,7 @@ class Announcement {
       for (final e in ((j['texts'] as Map?) ?? const {}).entries)
         e.key as String: e.value as String,
     },
+    sourceLanguage: j['source_language'] as String? ?? 'en',
     kind: j['kind'] as String? ?? 'info',
     icon: j['icon'] as String? ?? 'Megaphone',
   );

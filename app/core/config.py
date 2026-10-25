@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 1440
     model_download_url_expire_seconds: int = 900
     max_model_size_bytes: int = 1_073_741_824
+    firebase_credentials_path: str = ""
+    firebase_project_id: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

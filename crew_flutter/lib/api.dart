@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -10,6 +11,7 @@ class CrewApi {
   final String baseUrl;
   DeviceSession? session;
   WebSocketChannel? _socket;
+  Timer? _heartbeat;
 
   Future<DeviceSession> pair(String pairingCode) async {
     final response = await http.post(
@@ -70,6 +72,27 @@ class CrewApi {
         .toList();
   }
 
+  Future<List<Map<String, dynamic>>> fetchEvents({
+    int afterSequence = 0,
+  }) async {
+    if (session == null) {
+      throw Exception('Pair the crew tablet first');
+    }
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/v1/events?after_sequence=$afterSequence'),
+      headers: _headers(),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Could not replay events (${response.statusCode}): ${response.body}',
+      );
+    }
+    return [
+      for (final item in jsonDecode(response.body) as List)
+        Map<String, dynamic>.from(item as Map),
+    ];
+  }
+
   Future<Map<String, dynamic>> fetchSession() async {
     final response = await http.get(
       Uri.parse('$baseUrl/api/v1/session/current'),
@@ -111,12 +134,25 @@ class CrewApi {
     );
     _socket = WebSocketChannel.connect(socketUri);
     _socket!.sink.add('ping');
+    _heartbeat?.cancel();
+    _heartbeat = Timer.periodic(const Duration(seconds: 20), (_) {
+      try {
+        _socket?.sink.add('ping');
+      } catch (_) {
+        // The stream listener handles reconnecting after a socket failure.
+      }
+    });
     return _socket!.stream.map(
       (event) => jsonDecode(event as String) as Map<String, dynamic>,
     );
   }
 
-  void dispose() => _socket?.sink.close();
+  void dispose() {
+    _heartbeat?.cancel();
+    _heartbeat = null;
+    _socket?.sink.close();
+    _socket = null;
+  }
 
   Map<String, String> _headers() => {
     'Authorization': 'Bearer ${session!.deviceToken}',

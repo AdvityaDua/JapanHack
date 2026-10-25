@@ -58,6 +58,9 @@ class PassengerActionBody(BaseModel):
 
 class AnnouncementBody(BaseModel):
     text: str = Field(min_length=1, max_length=500)
+    # BCP-47-ish short code for the language spoken by the crew. Passenger
+    # devices translate from this source into their own saved preference.
+    source_language: str = Field(default="en", min_length=2, max_length=20)
     target_device_id: str | None = None
     kind: str = Field(default="info", max_length=40)
     icon: str = Field(default="Megaphone", max_length=60)

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "omnilingual-300m",
+      "version": "demo-1",
+      "title": "Speech: Indian and Southeast Asian languages",
+      "purpose": "Offline passenger and crew speech recognition",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "size_bytes": 365400000,
+          "sha256": "replace-with-sha256"
+        },
+        {
+          "name": "tokens.txt",
+          "size_bytes": 90000,
+          "sha256": "replace-with-sha256"
+        }
+      ]
+    }
+  ]
+}

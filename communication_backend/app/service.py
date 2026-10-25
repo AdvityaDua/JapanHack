@@ -178,7 +178,18 @@ def create_announcement(payload: AnnouncementBody, device: dict, bus: MQTTBus) -
         return existing
     now = now_iso()
     announcement_id = new_id()
-    announcement = {"id": announcement_id, "phrase": None, "custom": payload.text, "texts": {"English": payload.text}, "kind": payload.kind, "icon": payload.icon, "target_device_id": payload.target_device_id}
+    announcement = {
+        "id": announcement_id,
+        "phrase": None,
+        "custom": payload.text,
+        # Keep the source text under its own language for older clients; new
+        # passenger clients translate `custom` locally into their preference.
+        "texts": {payload.source_language: payload.text},
+        "source_language": payload.source_language,
+        "kind": payload.kind,
+        "icon": payload.icon,
+        "target_device_id": payload.target_device_id,
+    }
     event = {"event_id": new_id(), "event_type": "announcement.created", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": announcement_id, "producer": "crew-device", "device_id": device["device_id"], "occurred_at": now, "payload": announcement}
     store.append_event(event, f"flight/{device['flight_id']}/events/announcement-created", now)
     store.save_idempotent(f"announcement:{device['device_id']}", payload.idempotency_key, announcement, now)

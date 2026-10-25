@@ -7,6 +7,11 @@
 **/.env.*
 !**/.env.example
 !**/.env.sample
+**/firebase-service-account*.json
+**/service-account*.json
+**/google-services.json
+**/*firebase-adminsdk*.json
+**/firebase-admin*.json
 
 # Python environments, caches, and local databases
 .venv/

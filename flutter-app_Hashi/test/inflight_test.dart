@@ -203,7 +203,7 @@ void main() {
           asked.add(hosts);
           return const CabinConnection(CabinState.ready, baseUrl: 'http://192.168.137.1:8000', seat: '24C', flight: 'JL740');
         });
-        expect(asked.first, contains('http://hashi-cabin.local:8000'));
+        expect(asked.first, contains('http://hashi-cabin.local:8001'));
         expect(cabin.uris.single.toString(), 'ws://192.168.137.1:8000/ws/passenger?seat=24C');
         cabin.welcome();
         await settle(t);
@@ -285,7 +285,7 @@ void main() {
       cabin.push(announce('a2', phrase: null, custom: 'Please stay seated', texts: {'hi': 'कृपया बैठे रहें', 'ja': 'お座りください'}));
       await settle(t);
       expect(find.text('कृपया बैठे रहें'), findsOneWidget);
-      expect(find.text('Machine translation'), findsOneWidget);
+      expect(find.textContaining('Translated on your device'), findsOneWidget);
       expect(sound.spoken.single, 'hi-IN:कृपया बैठे रहें');
     });
 

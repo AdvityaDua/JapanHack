@@ -4,3 +4,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+models/*
+!models/README.md
+!models/manifest.example.json

@@ -14,6 +14,7 @@ const languages = <Lang>[
   Lang('pa', 'ਪੰਜਾਬੀ', 'pa-IN', null),
   Lang('hi', 'हिन्दी', 'hi-IN', TranslateLanguage.hindi),
   Lang('en', 'English', 'en-US', TranslateLanguage.english),
+  Lang('ja', '日本語', 'ja-JP', TranslateLanguage.japanese),
   Lang('ta', 'தமிழ்', 'ta-IN', TranslateLanguage.tamil),
   Lang('te', 'తెలుగు', 'te-IN', TranslateLanguage.telugu),
   Lang('bn', 'বাংলা', 'bn-IN', TranslateLanguage.bengali),
@@ -30,4 +31,5 @@ const languages = <Lang>[
   Lang('my', 'မြန်မာ', 'my-MM', null),
 ];
 
-Lang langByCode(String code) => languages.firstWhere((l) => l.code == code, orElse: () => languages[2]);
+Lang langByCode(String code) =>
+    languages.firstWhere((l) => l.code == code, orElse: () => languages[2]);

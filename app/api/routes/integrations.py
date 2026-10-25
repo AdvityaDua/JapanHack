@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from app.api.dependencies import DB, require_partner_client
 from app.db.models import APIClient, Booking, BookingPassenger, BookingSegment, IdempotencyRecord, SeatAssignment, User, UserPreference
 from app.schemas.booking import BookingResponse, BookingSyncRequest
+from app.services.push import send_user_notification
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["partner integrations"])
 
@@ -21,6 +22,7 @@ def sync_booking(payload: BookingSyncRequest, db: DB, client: APIClient = Depend
         if existing:
             return existing
     user = None
+    new_user = False
     if payload.external_user_id:
         user = db.scalar(select(User).where(User.external_user_id == payload.external_user_id))
     if not user and payload.email:
@@ -31,6 +33,7 @@ def sync_booking(payload: BookingSyncRequest, db: DB, client: APIClient = Depend
         user = User(email=payload.email.lower(), external_user_id=payload.external_user_id, display_name=payload.display_name, preferred_language=payload.preferred_language, password_hash="external-auth")
         db.add(user)
         db.flush()
+        new_user = True
     if user.preferences is None:
         user.preferences = UserPreference(spoken_language=user.preferred_language, display_language=user.preferred_language)
     booking = db.scalar(select(Booking).options(selectinload(Booking.segments).selectinload(BookingSegment.seat_assignments)).where(Booking.api_client_id == client.id, Booking.external_order_id == payload.external_order_id))
@@ -56,4 +59,19 @@ def sync_booking(payload: BookingSyncRequest, db: DB, client: APIClient = Depend
     db.add(IdempotencyRecord(api_client_id=client.id, idempotency_key=idempotency_key, booking_id=booking.id))
     db.commit()
     db.refresh(booking)
+    send_user_notification(
+        db,
+        user.id,
+        title="Flight booking confirmed",
+        body=f"Your booking {booking.external_booking_reference or booking.external_order_id} is ready. Set your Hashi preferences before flying.",
+        data={"type": "booking.confirmed", "booking_id": str(booking.id)},
+    )
+    if new_user:
+        send_user_notification(
+            db,
+            user.id,
+            title="Complete your Hashi preferences",
+            body="Choose your language and accessibility preferences for a smoother flight.",
+            data={"type": "preferences.required"},
+        )
     return booking

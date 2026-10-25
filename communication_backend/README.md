@@ -24,6 +24,17 @@ uv run --with fastapi --with uvicorn --with paho-mqtt --with websockets uvicorn 
 
 The backend should not depend on internet connectivity during the flight. It should continue working over the aircraft's local Wi-Fi network and synchronize with the cloud backend when connectivity returns.
 
+## Aircraft model cache
+
+The edge server can distribute large speech and translation bundles over the
+aircraft Wi-Fi network. Copy the model files into `models/{model-id}/`, create
+`models/manifest.json` from `models/manifest.example.json`, and start the edge
+server normally. Paired passenger devices can then call `GET /api/v1/models`
+and download declared files from `GET /api/v1/models/{model_id}/{file_name}`.
+Downloads support HTTP ranges, so the passenger app can resume after a brief
+Wi-Fi interruption. Model files and the real manifest are intentionally
+ignored by Git because they can be hundreds of megabytes or larger.
+
 ## Core use case
 
 ```text

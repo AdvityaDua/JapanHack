@@ -62,6 +62,18 @@ class UserPreference(TimestampMixin, Base):
     user = relationship("User", back_populates="preferences")
 
 
+class PushDevice(TimestampMixin, Base):
+    __tablename__ = "push_devices"
+    __table_args__ = (UniqueConstraint("user_id", "device_id", name="uq_push_device_user_device"),)
+    id: Mapped[UUID] = mapped_column(UUIDType, primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    device_id: Mapped[str] = mapped_column(String(255))
+    token: Mapped[str] = mapped_column(String(4096), unique=True)
+    platform: Mapped[str] = mapped_column(String(30), default="android")
+    app_id: Mapped[str | None] = mapped_column(String(255))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class AirlinePartner(TimestampMixin, Base):
     __tablename__ = "airline_partners"
     id: Mapped[UUID] = mapped_column(UUIDType, primary_key=True, default=lambda: str(uuid4()))

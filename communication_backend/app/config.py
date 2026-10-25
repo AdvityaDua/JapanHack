@@ -19,6 +19,8 @@ class Settings:
     aircraft_identifier: str = "DEMO-AIRCRAFT"
     crew_pairing_code: str = "CREW-DEMO"
     demo_seed: bool = False
+    model_directory: str = "./models"
+    model_manifest_path: str = "./models/manifest.json"
     access_token_expire_minutes: int = 720
     cors_origins: list[str] = field(default_factory=lambda: [
         "http://localhost:3000",
@@ -39,7 +41,7 @@ class Settings:
                     if line and not line.startswith("#") and "=" in line:
                         key, value = line.split("=", 1)
                         os.environ.setdefault(key.strip(), value.strip())
-        string_fields = ("app_name", "environment", "secret_key", "database_path", "mqtt_host", "mqtt_username", "mqtt_password", "flight_id", "flight_number", "aircraft_identifier", "crew_pairing_code")
+        string_fields = ("app_name", "environment", "secret_key", "database_path", "mqtt_host", "mqtt_username", "mqtt_password", "flight_id", "flight_number", "aircraft_identifier", "crew_pairing_code", "model_directory", "model_manifest_path")
         for name in string_fields:
             env_name = name.upper()
             if env_name in os.environ and os.environ[env_name]:

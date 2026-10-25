@@ -73,7 +73,7 @@ def sync_booking(
         "booking_status": "confirmed",
         "source_system": "demo-booking-script",
         "passengers": [{"external_passenger_id": "demo-pax-001", "given_name": "Demo", "family_name": "Passenger", "passenger_type": "adult"}],
-        "segments": [{"external_segment_id": "demo-segment-001", "flight_number": "JL707", "airline_code": "JL", "departure_airport": "NRT", "arrival_airport": "DEL", "departure_time": "2026-11-15T10:30:00Z", "arrival_time": "2026-11-15T17:00:00Z", "segment_status": "confirmed"}],
+        "segments": [{"external_segment_id": "demo-segment-001", "flight_number": "707", "airline_code": "JL", "departure_airport": "NRT", "arrival_airport": "DEL", "departure_time": "2026-11-15T10:30:00Z", "arrival_time": "2026-11-15T17:00:00Z", "segment_status": "confirmed"}],
         "seats": [{"external_passenger_id": "demo-pax-001", "external_segment_id": "demo-segment-001", "seat_number": seat_number, "cabin_class": "economy", "boarding_group": "B", "seat_status": "confirmed"}],
     }
     request = Request(

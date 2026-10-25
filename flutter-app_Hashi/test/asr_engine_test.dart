@@ -61,7 +61,7 @@ ModelStore storeWith(List<ModelSpec> models) {
   final m = mic ?? FakeMic();
   final e = SherpaSpeechEngine(storeWith(models ?? [vadModel, omniModel, whisperTinyModel]), mic: m, startBackend: (_) async => b);
   addTearDown(() {
-    m.chunks.close();
+    if (m.chunks.hasListener) m.chunks.close();
     b.out.close();
   });
   return (engine: e, backend: b, mic: m);
@@ -165,7 +165,9 @@ void main() {
     test('if the worker cannot start, the error is reported and nothing is left running', () async {
       final mic = FakeMic();
       final e = SherpaSpeechEngine(storeWith([vadModel, omniModel]), mic: mic, startBackend: (_) async => throw StateError('no native library'));
-      addTearDown(mic.chunks.close);
+      addTearDown(() {
+        if (mic.chunks.hasListener) mic.chunks.close();
+      });
       final events = <SpeechEvent>[];
       var done = false;
       e.listen('hi_IN').listen(events.add, onDone: () => done = true);
@@ -193,7 +195,7 @@ void main() {
         return b;
       });
       addTearDown(() {
-        mic.chunks.close();
+        if (mic.chunks.hasListener) mic.chunks.close();
         b.out.close();
       });
       e.listen('hi_IN').listen((_) {});

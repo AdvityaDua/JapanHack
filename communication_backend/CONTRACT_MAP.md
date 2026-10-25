@@ -22,6 +22,38 @@ MQTT:
 mqtt://aircraft-gateway.local:1883
 ```
 
+## Aircraft-local model distribution
+
+The edge server can stage large speech/translation model bundles under its
+local `models/` directory. This path is independent of the internet and the
+cloud R2 model service.
+
+### Catalogue
+
+```http
+GET /api/v1/models
+Authorization: Bearer {device_token}
+```
+
+The response includes each model's ID, version, files, expected byte count,
+SHA-256, and whether the file is currently installed on the aircraft server.
+
+### Resumable file download
+
+```http
+GET /api/v1/models/{model_id}/{file_name}
+Authorization: Bearer {device_token}
+Range: bytes=1048576-
+```
+
+The endpoint streams locally and returns `206 Partial Content` for a valid
+range. Passenger apps should save a `.part` file, retry with `Range` after a
+Wi-Fi interruption, verify the expected size and SHA-256, then atomically
+rename the file into the local model directory.
+
+Only paired devices can access the model catalogue or files. The server
+rejects path traversal and only serves files declared in `manifest.json`.
+
 The app should discover the aircraft gateway address from the aircraft Wi-Fi captive portal, a QR code, or a configured local hostname. Do not hard-code an IP address in production.
 
 ## Pairing contract
@@ -239,6 +271,7 @@ Content-Type: application/json
 ```json
 {
   "text": "Please remain seated.",
+  "source_language": "en",
   "target_device_id": null,
   "kind": "info",
   "icon": "Megaphone",
@@ -246,9 +279,11 @@ Content-Type: application/json
 }
 ```
 
-`target_device_id` can target one passenger; `null` broadcasts to every
-passenger connected to the active flight. The passenger receives an
-`announcement.created` event and can translate it locally.
+`source_language` identifies the language spoken by the crew. The passenger
+device translates the raw text locally into its saved preferred language and
+uses local text-to-speech. `target_device_id` can target one passenger;
+`null` broadcasts to every passenger connected to the active flight. The
+passenger receives an `announcement.created` event and translates it locally.
 
 ## WebSocket contract
 

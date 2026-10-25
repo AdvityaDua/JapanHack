@@ -24,6 +24,8 @@ With no `DATABASE_URL`, development uses `local.db`. For Neon, set the pooled Po
 - `GET /api/v1/users/me/bookings`
 - `GET /api/v1/users/me/bookings/{booking_id}`
 - `POST /api/v1/integrations/bookings`
+- `POST /api/v1/notifications/devices`
+- `DELETE /api/v1/notifications/devices/{device_id}`
 - `GET /api/v1/models`
 - `POST /api/v1/models/{model_id}/download-url`
 
@@ -63,6 +65,25 @@ the seat or booking reference for the demo:
 The sample booking includes a passenger, flight segment, and seat assignment.
 The `seed` and `sync` commands remain available when you want to inspect or
 provide the partner API key manually.
+
+## Firebase push notifications
+
+The passenger Android app registers its FCM token at
+`POST /api/v1/notifications/devices`. When a partner booking is created, the
+backend sends a booking-confirmed notification and, for a newly created user,
+a reminder to complete preferences.
+
+The repository contains the Android client configuration at
+`flutter-app_Hashi/android/app/google-services.json`. Keep the Firebase Admin
+service-account JSON outside Git and set these backend variables in `.env`:
+
+```dotenv
+FIREBASE_CREDENTIALS_PATH=/absolute/path/to/japan-hack-firebase-adminsdk.json
+FIREBASE_PROJECT_ID=japan-hack
+```
+
+The service account is only used by the FastAPI process to send FCM messages;
+it must never be placed in the Flutter app or committed to the repository.
 - Use HTTPS and restrict `CORS_ORIGINS`.
 - Keep the R2 bucket private and use short-lived download URLs.
 - Add rate limiting at the edge or API gateway.

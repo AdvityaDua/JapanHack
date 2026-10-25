@@ -85,6 +85,22 @@ class Kit {
   static Future<bool> has(TranslateLanguage l) =>
       _manager.isModelDownloaded(l.bcpCode);
 
+  /// Returns the install state for every translation model required by [lang].
+  /// ML Kit does not bundle these models in the APK; the app must download them.
+  static Future<Map<String, bool>> status(String lang) async {
+    final models = needed(lang);
+    final states = <String, bool>{};
+    for (final model in models) {
+      states[model.bcpCode] = await has(model);
+    }
+    return states;
+  }
+
+  static Future<bool> ready(String lang) async {
+    final states = await status(lang);
+    return states.values.every((installed) => installed);
+  }
+
   static Future<bool> download(TranslateLanguage l) =>
       _manager.downloadModel(l.bcpCode, isWifiRequired: false);
 

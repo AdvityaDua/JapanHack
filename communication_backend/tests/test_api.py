@@ -33,6 +33,48 @@ def test_health_and_current_session(client):
     assert response.json()["status"] == "boarding"
 
 
+def test_aircraft_model_catalogue_and_resumable_download(client, tmp_path, monkeypatch):
+    import json
+    import app.config as config
+
+    model_root = tmp_path / "models"
+    model_dir = model_root / "demo-model"
+    model_dir.mkdir(parents=True)
+    payload = b"0123456789"
+    (model_dir / "model.bin").write_bytes(payload)
+    (model_root / "manifest.json").write_text(
+        json.dumps({
+            "version": 2,
+            "models": [{
+                "id": "demo-model",
+                "version": "1",
+                "files": [{"name": "model.bin", "size_bytes": len(payload), "sha256": "demo"}],
+            }],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config.settings, "model_directory", str(model_root))
+    monkeypatch.setattr(config.settings, "model_manifest_path", str(model_root / "manifest.json"))
+    passenger = pair(client, "passenger", seat_number="24A")
+    headers = {"Authorization": f"Bearer {passenger['device_token']}"}
+
+    catalogue = client.get("/api/v1/models", headers=headers)
+    assert catalogue.status_code == 200
+    assert catalogue.json()["models"][0]["available"] is True
+
+    partial = client.get("/api/v1/models/demo-model/model.bin", headers={**headers, "Range": "bytes=3-6"})
+    assert partial.status_code == 206
+    assert partial.content == b"3456"
+    assert partial.headers["content-range"] == "bytes 3-6/10"
+
+
+def test_aircraft_model_download_requires_pairing_and_rejects_undeclared_files(client):
+    assert client.get("/api/v1/models").status_code == 401
+    passenger = pair(client, "passenger", seat_number="24B")
+    headers = {"Authorization": f"Bearer {passenger['device_token']}"}
+    assert client.get("/api/v1/models/unknown/model.bin", headers=headers).status_code == 404
+
+
 def test_crew_seat_map_returns_aircraft_layout(client):
     from app.demo_seed import seed_demo_seat_map
 

@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 class ModelFile {
   final String name;
   final String url;
+
   /// Expected size in bytes; a download of a different size is rejected.
   final int bytes;
   const ModelFile(this.name, this.url, this.bytes);
@@ -21,7 +22,13 @@ class ModelSpec {
   final String purpose;
   final String dir;
   final List<ModelFile> files;
-  const ModelSpec({required this.id, required this.title, required this.purpose, required this.dir, required this.files});
+  const ModelSpec({
+    required this.id,
+    required this.title,
+    required this.purpose,
+    required this.dir,
+    required this.files,
+  });
 
   int get totalBytes => files.fold(0, (a, f) => a + f.bytes);
 }
@@ -35,8 +42,16 @@ const omniModel = ModelSpec(
   purpose: 'Listens to Hindi, Punjabi, Tamil and 1,600 other languages',
   dir: 'omnilingual-asr-300m-int8',
   files: [
-    ModelFile('model.int8.onnx', '$_hf/csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/model.int8.onnx', 365400000),
-    ModelFile('tokens.txt', '$_hf/csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/tokens.txt', 90000),
+    ModelFile(
+      'model.int8.onnx',
+      '$_hf/csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/model.int8.onnx',
+      365400000,
+    ),
+    ModelFile(
+      'tokens.txt',
+      '$_hf/csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/tokens.txt',
+      90000,
+    ),
   ],
 );
 
@@ -47,9 +62,21 @@ const whisperTinyModel = ModelSpec(
   purpose: 'Listens to Japanese (the crew) and English',
   dir: 'whisper-tiny-int8',
   files: [
-    ModelFile('tiny-encoder.int8.onnx', '$_hf/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-encoder.int8.onnx', 12900000),
-    ModelFile('tiny-decoder.int8.onnx', '$_hf/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-decoder.int8.onnx', 89900000),
-    ModelFile('tiny-tokens.txt', '$_hf/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-tokens.txt', 816730),
+    ModelFile(
+      'tiny-encoder.int8.onnx',
+      '$_hf/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-encoder.int8.onnx',
+      12900000,
+    ),
+    ModelFile(
+      'tiny-decoder.int8.onnx',
+      '$_hf/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-decoder.int8.onnx',
+      89900000,
+    ),
+    ModelFile(
+      'tiny-tokens.txt',
+      '$_hf/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-tokens.txt',
+      816730,
+    ),
   ],
 );
 
@@ -59,7 +86,13 @@ const vadModel = ModelSpec(
   title: 'Voice detector',
   purpose: 'Finds where a sentence starts and ends',
   dir: 'silero-vad',
-  files: [ModelFile('silero_vad.onnx', 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx', 643854)],
+  files: [
+    ModelFile(
+      'silero_vad.onnx',
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
+      643854,
+    ),
+  ],
 );
 
 const speechModels = [vadModel, whisperTinyModel, omniModel];
@@ -68,10 +101,13 @@ const speechModels = [vadModel, whisperTinyModel, omniModel];
 class ModelStore {
   final Directory root;
   final http.Client _http;
-  ModelStore(this.root, {http.Client? client}) : _http = client ?? http.Client();
+  ModelStore(this.root, {http.Client? client})
+    : _http = client ?? http.Client();
 
   static Future<ModelStore> open({http.Client? client}) async {
-    final base = await getExternalStorageDirectory() ?? await getApplicationSupportDirectory();
+    final base =
+        await getExternalStorageDirectory() ??
+        await getApplicationSupportDirectory();
     final dir = Directory('${base.path}/models');
     await dir.create(recursive: true);
     return ModelStore(dir, client: client);
@@ -81,11 +117,11 @@ class ModelStore {
 
   /// Every file is there and has the right size (within 1 percent, since sizes in the catalogue are rounded).
   bool installed(ModelSpec m) => m.files.every((f) {
-        final file = File(pathOf(m, f.name));
-        if (!file.existsSync()) return false;
-        final have = file.lengthSync();
-        return (have - f.bytes).abs() <= f.bytes * 0.01 + 2000;
-      });
+    final file = File(pathOf(m, f.name));
+    if (!file.existsSync()) return false;
+    final have = file.lengthSync();
+    return (have - f.bytes).abs() <= f.bytes * 0.01 + 2000;
+  });
 
   /// Bytes already on the phone for this model, counting a half-finished download.
   int bytesPresent(ModelSpec m) {
@@ -103,29 +139,65 @@ class ModelStore {
   }
 
   /// Downloads what is missing. Carries on from a half-finished file, and reports progress as 0.0 to 1.0.
-  Future<void> download(ModelSpec m, {void Function(double progress)? onProgress}) async {
+  Future<void> download(
+    ModelSpec m, {
+    void Function(double progress)? onProgress,
+  }) => _download(m, (file) => Uri.parse(file.url), onProgress: onProgress);
+
+  /// Downloads the same model bundle from the aircraft edge server. The device
+  /// token protects the local catalogue and the HTTP Range header lets a
+  /// passenger resume after an in-flight Wi-Fi interruption.
+  Future<void> downloadFromEdge(
+    ModelSpec m, {
+    required String baseUrl,
+    required String deviceToken,
+    void Function(double progress)? onProgress,
+  }) => _download(
+    m,
+    (file) {
+      final base = baseUrl.replaceFirst(RegExp(r'/+$'), '');
+      return Uri.parse(
+        '$base/api/v1/models/${Uri.encodeComponent(m.id)}/${Uri.encodeComponent(file.name)}',
+      );
+    },
+    headers: {'Authorization': 'Bearer $deviceToken'},
+    onProgress: onProgress,
+  );
+
+  Future<void> _download(
+    ModelSpec m,
+    Uri Function(ModelFile file) urlFor, {
+    Map<String, String> headers = const {},
+    void Function(double progress)? onProgress,
+  }) async {
     await Directory('${root.path}/${m.dir}').create(recursive: true);
     final total = m.totalBytes;
     var done = 0;
     for (final f in m.files) {
       final target = File(pathOf(m, f.name));
-      if (target.existsSync() && (target.lengthSync() - f.bytes).abs() <= f.bytes * 0.01 + 2000) {
+      if (target.existsSync() &&
+          (target.lengthSync() - f.bytes).abs() <= f.bytes * 0.01 + 2000) {
         done += target.lengthSync();
         onProgress?.call(done / total);
         continue;
       }
       final part = File('${target.path}.part');
       var have = part.existsSync() ? part.lengthSync() : 0;
-      final request = http.Request('GET', Uri.parse(f.url));
+      final request = http.Request('GET', urlFor(f));
+      request.headers.addAll(headers);
       if (have > 0) request.headers['Range'] = 'bytes=$have-';
       final response = await _http.send(request);
       if (response.statusCode != 200 && response.statusCode != 206) {
-        throw ModelDownloadException('${f.name}: the server answered ${response.statusCode}');
+        throw ModelDownloadException(
+          '${f.name}: the server answered ${response.statusCode}',
+        );
       }
       // 200 means the server ignored the range and is sending the whole file again
       final append = response.statusCode == 206;
       if (!append) have = 0;
-      final sink = part.openWrite(mode: append ? FileMode.append : FileMode.write);
+      final sink = part.openWrite(
+        mode: append ? FileMode.append : FileMode.write,
+      );
       try {
         await for (final chunk in response.stream) {
           sink.add(chunk);
@@ -137,8 +209,11 @@ class ModelStore {
       }
       final got = part.lengthSync();
       if ((got - f.bytes).abs() > f.bytes * 0.01 + 2000) {
-        await part.delete(); // a wrong-sized file is thrown away so the next try starts clean
-        throw ModelDownloadException('${f.name}: got $got bytes, expected about ${f.bytes}');
+        await part
+            .delete(); // a wrong-sized file is thrown away so the next try starts clean
+        throw ModelDownloadException(
+          '${f.name}: got $got bytes, expected about ${f.bytes}',
+        );
       }
       await part.rename(target.path);
       done += target.lengthSync();

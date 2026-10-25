@@ -26,12 +26,12 @@ final cabinPing = json({'service': 'hashi-cabin', 'flight': 'JL740', 'version': 
 void main() {
   group('host list', () {
     test('goes name first, then fallbacks, then the QR address, without repeats', () {
-      final hosts = defaultCabinHosts(fromQr: 'http://10.0.0.5:8000/', lastGood: 'http://hashi-cabin.local:8000');
-      expect(hosts, ['http://hashi-cabin.local:8000', 'http://hashi.cabin:8000', 'http://192.168.137.1:8000', 'http://10.0.0.5:8000']);
+      final hosts = defaultCabinHosts(fromQr: 'http://10.0.0.5:8001/', lastGood: 'http://hashi-cabin.local:8001');
+      expect(hosts, ['http://hashi-cabin.local:8001', 'http://hashi.cabin:8001', 'http://192.168.137.1:8001', 'http://10.0.0.5:8001']);
     });
 
     test('puts the last host that worked first', () {
-      expect(defaultCabinHosts(lastGood: 'http://192.168.137.1:8000').first, 'http://192.168.137.1:8000');
+      expect(defaultCabinHosts(lastGood: 'http://192.168.137.1:8001').first, 'http://192.168.137.1:8001');
     });
   });
 
@@ -40,7 +40,7 @@ void main() {
       final log = <String>[];
       final d = Discovery(client: fake({'192.168.137.1/api/ping': (_) => cabinPing}, log: log));
       final info = await d.find(defaultCabinHosts());
-      expect(info!.baseUrl, 'http://192.168.137.1:8000');
+      expect(info!.baseUrl, 'http://192.168.137.1:8001');
       expect(info.flight, 'JL740');
       expect(log.first, 'GET hashi-cabin.local/api/ping'); // the name is tried first
     });
@@ -50,7 +50,7 @@ void main() {
         'hashi-cabin.local/api/ping': (_) => json({'service': 'captive-portal'}),
         '192.168.137.1/api/ping': (_) => cabinPing,
       }));
-      expect((await d.find(defaultCabinHosts()))!.baseUrl, 'http://192.168.137.1:8000');
+      expect((await d.find(defaultCabinHosts()))!.baseUrl, 'http://192.168.137.1:8001');
     });
 
     test('an HTML page (portal login) is rejected', () async {
@@ -88,7 +88,7 @@ void main() {
       });
       final watch = Stopwatch()..start();
       final info = await Discovery(client: c, timeout: const Duration(seconds: 2)).find(defaultCabinHosts());
-      expect(info!.baseUrl, 'http://192.168.137.1:8000');
+      expect(info!.baseUrl, 'http://192.168.137.1:8001');
       expect(watch.elapsedMilliseconds, lessThan(1500));
     });
 

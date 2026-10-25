@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 
 from app.config import settings
 from app.messaging import MQTTBus
@@ -8,6 +9,7 @@ from app.realtime import manager
 from app.schemas import AnnouncementBody, CreateRequestBody, CrewMessageBody, EventResponse, PairDeviceRequest, PairDeviceResponse, PassengerActionBody, RequestResponse, SeatResponse, SessionResponse, UpdateStatusBody
 from app.service import cancel_passenger_request, create_announcement, create_crew_message, create_passenger_message, create_request, pair_device, row_to_request, row_to_seat, submit_passenger_action, update_status, verify_device_token
 from app.store import store
+from app.model_store import get_model_file, public_catalog
 
 
 def token_device(authorization: Annotated[str | None, Header()] = None, device_token: Annotated[str | None, Header()] = None) -> dict:
@@ -26,6 +28,60 @@ def make_router(bus: MQTTBus) -> APIRouter:
         if not row:
             raise HTTPException(status_code=404, detail="No active flight session")
         return dict(row)
+
+    @router.get("/models")
+    def model_catalog(device: dict = Depends(token_device)):
+        """List model bundles staged on this aircraft edge server."""
+        return public_catalog()
+
+    @router.get("/models/{model_id}/{file_name:path}")
+    def model_file(model_id: str, file_name: str, request: Request, device: dict = Depends(token_device)):
+        """Stream a staged model file and support HTTP Range for resumable downloads."""
+        _, file_meta, path = get_model_file(model_id, file_name)
+        size = path.stat().st_size
+        start, end = 0, size - 1
+        range_header = request.headers.get("range")
+        if range_header:
+            if not range_header.startswith("bytes=") or "," in range_header:
+                raise HTTPException(status_code=416, detail="Only one byte range is supported")
+            raw_start, raw_end = (range_header.removeprefix("bytes=").split("-", 1) + [""])[:2]
+            try:
+                if raw_start:
+                    start = int(raw_start)
+                    end = int(raw_end) if raw_end else size - 1
+                else:
+                    suffix = int(raw_end)
+                    start = max(size - suffix, 0)
+                    end = size - 1
+            except ValueError as exc:
+                raise HTTPException(status_code=416, detail="Invalid byte range") from exc
+            if start < 0 or start >= size or end < start:
+                raise HTTPException(status_code=416, detail="Invalid byte range")
+            end = min(end, size - 1)
+
+        length = end - start + 1
+
+        def chunks():
+            with path.open("rb") as stream:
+                stream.seek(start)
+                remaining = length
+                while remaining:
+                    chunk = stream.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Content-Disposition": f'attachment; filename="{path.name}"',
+        }
+        if file_meta.get("sha256"):
+            headers["X-Model-SHA256"] = str(file_meta["sha256"])
+        if range_header:
+            headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+        return StreamingResponse(chunks(), status_code=206 if range_header else 200, media_type="application/octet-stream", headers=headers)
 
     @router.post("/devices/pair", response_model=PairDeviceResponse)
     def pair(payload: PairDeviceRequest):
