@@ -127,6 +127,7 @@ class CommunicationClient {
     required String requestId,
     required String text,
     String? translatedText,
+    String sourceLanguage = 'en',
     required String idempotencyKey,
   }) async {
     final response = await _http
@@ -136,6 +137,7 @@ class CommunicationClient {
           body: jsonEncode({
             'text': text,
             'translated_text': translatedText,
+            'source_language': sourceLanguage,
             'idempotency_key': idempotencyKey,
           }),
         )
@@ -191,6 +193,7 @@ class CommunicationClient {
     required String crewToken,
     required String text,
     String? translatedText,
+    String sourceLanguage = 'ja',
     required String idempotencyKey,
   }) async {
     final response = await _http
@@ -200,6 +203,7 @@ class CommunicationClient {
           body: jsonEncode({
             'text': text,
             'translated_text': translatedText,
+            'source_language': sourceLanguage,
             'idempotency_key': idempotencyKey,
           }),
         )

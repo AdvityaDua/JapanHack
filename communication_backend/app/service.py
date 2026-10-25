@@ -127,7 +127,7 @@ def create_crew_message(request_id: str, payload: CrewMessageBody, device: dict,
     if not request or request["flight_id"] != device["flight_id"]:
         raise HTTPException(status_code=404, detail="Request not found")
     now = now_iso()
-    message = {"id": new_id(), "request_id": request_id, "from": "crew", "original": payload.text, "translated": payload.translated_text, "status": "sent", "lane": "machine"}
+    message = {"id": new_id(), "request_id": request_id, "from": "crew", "original": payload.text, "translated": payload.translated_text, "source_language": payload.source_language, "status": "sent", "lane": "machine"}
     event = {"event_id": new_id(), "event_type": "message.created", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": request_id, "producer": "crew-device", "device_id": device["device_id"], "occurred_at": now, "payload": message}
     store.append_event(event, f"flight/{device['flight_id']}/events/message-created", now)
     store.save_idempotent(f"message:{request_id}", payload.idempotency_key, message, now)
@@ -144,7 +144,7 @@ def create_passenger_message(request_id: str, payload: CrewMessageBody, device: 
     if not request or request["flight_id"] != device["flight_id"] or request["passenger_device_id"] != device["device_id"]:
         raise HTTPException(status_code=404, detail="Request not found")
     now = now_iso()
-    message = {"id": new_id(), "request_id": request_id, "from": "passenger", "original": payload.text, "translated": payload.translated_text, "status": "sent", "lane": "machine"}
+    message = {"id": new_id(), "request_id": request_id, "from": "passenger", "original": payload.text, "translated": payload.translated_text, "source_language": payload.source_language, "status": "sent", "lane": "machine"}
     event = {"event_id": new_id(), "event_type": "message.created", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": request_id, "producer": "passenger-device", "device_id": device["device_id"], "occurred_at": now, "payload": message}
     store.append_event(event, f"flight/{device['flight_id']}/events/message-created", now)
     store.save_idempotent(f"passenger-message:{device['device_id']}:{request_id}", payload.idempotency_key, message, now)

@@ -311,6 +311,58 @@ class CabinLink {
     }
   }
 
+  /// Opens one durable request that represents the live translation session.
+  /// Every following translated turn is attached to this request so the crew
+  /// can keep one conversation selected for the passenger's seat.
+  Future<String?> ensureConversationRequest() async {
+    final existing = store.activeRequests.where(
+      (r) => r.intent == 'conversation',
+    );
+    if (existing.isNotEmpty) return existing.first.id;
+    final client = backend;
+    final credentials = _credentials;
+    if (client == null || credentials == null || !online) return null;
+    try {
+      final request = await client.createRequest(
+        credentials: credentials,
+        category: 'conversation',
+        message: 'Live translation conversation started',
+        passengerLanguage: _hello?.call()['lang'] as String? ?? 'English',
+        idempotencyKey: _key('conversation'),
+      );
+      store.applyBackendRequest(request);
+      return request['id']?.toString();
+    } on CommunicationException {
+      return null;
+    }
+  }
+
+  /// Sends a translated passenger turn to the crew device in real time.
+  Future<bool> sendLiveTranslation({
+    required String text,
+    required String translatedText,
+    required String sourceLanguage,
+  }) async {
+    final client = backend;
+    final credentials = _credentials;
+    if (client == null || credentials == null || !online) return false;
+    final requestId = await ensureConversationRequest();
+    if (requestId == null) return false;
+    try {
+      await client.sendPassengerMessage(
+        credentials: credentials,
+        requestId: requestId,
+        text: text,
+        translatedText: translatedText,
+        sourceLanguage: sourceLanguage,
+        idempotencyKey: _key('live-message', requestId),
+      );
+      return true;
+    } on CommunicationException {
+      return false;
+    }
+  }
+
   void cancelRequest(String id) {
     final client = backend;
     final credentials = _credentials;

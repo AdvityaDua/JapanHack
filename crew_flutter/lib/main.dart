@@ -42,6 +42,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
   CrewApi api = CrewApi(defaultCrewBackendUrl);
   List<CrewRequest> requests = [];
   List<CrewSeat> seats = [];
+  final Map<String, List<CrewMessage>> conversations = {};
   String filter = 'All';
   String? selectedId;
   bool connected = false;
@@ -175,6 +176,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
           CrewRequest.fromJson(payload),
           ...requests.where((item) => item.id != id),
         ];
+        selectedId = id;
       } else if (event['event_type'] == 'request.status_changed') {
         requests = requests
             .map(
@@ -183,6 +185,10 @@ class _CrewDashboardState extends State<CrewDashboard> {
                   : item,
             )
             .toList();
+      } else if (event['event_type'] == 'message.created') {
+        final message = CrewMessage.fromJson(payload);
+        final current = conversations.putIfAbsent(id, () => []);
+        if (!current.any((item) => item.id == message.id)) current.add(message);
       }
     });
   }
@@ -214,6 +220,20 @@ class _CrewDashboardState extends State<CrewDashboard> {
             .map((item) => item.id == request.id ? request : item)
             .toList(),
       );
+      _showError(exception.toString());
+    }
+  }
+
+  Future<void> sendCrewMessage(String text) async {
+    final request = selected;
+    if (request == null || text.trim().isEmpty || !connected) return;
+    try {
+      final message = await api.sendMessage(request, text.trim());
+      if (!mounted) return;
+      setState(
+        () => conversations.putIfAbsent(request.id, () => []).add(message),
+      );
+    } catch (exception) {
       _showError(exception.toString());
     }
   }
@@ -302,7 +322,14 @@ class _CrewDashboardState extends State<CrewDashboard> {
       const SizedBox(width: 14),
       Expanded(
         flex: 4,
-        child: RequestDetails(request: selected, onStatus: changeStatus),
+        child: RequestDetails(
+          request: selected,
+          messages: selected == null
+              ? const []
+              : conversations[selected!.id] ?? const [],
+          onStatus: changeStatus,
+          onSendMessage: sendCrewMessage,
+        ),
       ),
       const SizedBox(width: 14),
       Expanded(flex: 3, child: PassengerInfo(request: selected)),
@@ -322,7 +349,14 @@ class _CrewDashboardState extends State<CrewDashboard> {
       ),
       const SizedBox(height: 14),
       Expanded(
-        child: RequestDetails(request: selected, onStatus: changeStatus),
+        child: RequestDetails(
+          request: selected,
+          messages: selected == null
+              ? const []
+              : conversations[selected!.id] ?? const [],
+          onStatus: changeStatus,
+          onSendMessage: sendCrewMessage,
+        ),
       ),
     ],
   );
@@ -975,10 +1009,14 @@ class RequestDetails extends StatelessWidget {
   const RequestDetails({
     super.key,
     required this.request,
+    required this.messages,
     required this.onStatus,
+    required this.onSendMessage,
   });
   final CrewRequest? request;
+  final List<CrewMessage> messages;
   final Future<void> Function(String) onStatus;
+  final Future<void> Function(String) onSendMessage;
   @override
   Widget build(BuildContext context) {
     final current = request;
@@ -1049,6 +1087,21 @@ class RequestDetails extends StatelessWidget {
             _translation(current.category),
             true,
           ),
+          for (final message in messages) ...[
+            const SizedBox(height: 8),
+            _bubble(
+              message.fromPassenger
+                  ? Icons.person_outline
+                  : Icons.record_voice_over_rounded,
+              message.fromPassenger
+                  ? 'Passenger · translated on crew panel'
+                  : 'Crew reply · delivered to passenger',
+              message.fromPassenger
+                  ? (message.translated ?? message.original)
+                  : message.original,
+              message.fromPassenger,
+            ),
+          ],
           const SizedBox(height: 8),
           Container(
             width: double.infinity,
@@ -1062,6 +1115,8 @@ class RequestDetails extends StatelessWidget {
               style: TextStyle(fontSize: 11, color: navy, height: 1.5),
             ),
           ),
+          const SizedBox(height: 10),
+          _ReplyComposer(onSend: onSendMessage),
           const Spacer(),
           Row(
             children: [
@@ -1189,6 +1244,70 @@ class RequestDetails extends StatelessWidget {
       );
   String _translation(String category) =>
       category == 'Water' ? '水をお願いします。' : 'ご希望を確認しています。';
+}
+
+class _ReplyComposer extends StatefulWidget {
+  const _ReplyComposer({required this.onSend});
+  final Future<void> Function(String) onSend;
+  @override
+  State<_ReplyComposer> createState() => _ReplyComposerState();
+}
+
+class _ReplyComposerState extends State<_ReplyComposer> {
+  final controller = TextEditingController();
+  bool sending = false;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> send() async {
+    final value = controller.text.trim();
+    if (value.isEmpty || sending) return;
+    setState(() => sending = true);
+    await widget.onSend(value);
+    if (mounted) {
+      controller.clear();
+      setState(() => sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: TextField(
+          controller: controller,
+          minLines: 1,
+          maxLines: 2,
+          textInputAction: TextInputAction.send,
+          onSubmitted: (_) => send(),
+          decoration: const InputDecoration(
+            hintText: 'Reply in Japanese; passenger phone translates it',
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      IconButton.filled(
+        tooltip: 'Send translated reply',
+        onPressed: sending ? null : send,
+        icon: sending
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.send_rounded),
+      ),
+    ],
+  );
 }
 
 class PassengerInfo extends StatelessWidget {

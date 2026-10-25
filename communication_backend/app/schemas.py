@@ -46,6 +46,7 @@ class UpdateStatusBody(BaseModel):
 class CrewMessageBody(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     translated_text: str | None = Field(default=None, max_length=500)
+    source_language: str = Field(default="ja", min_length=2, max_length=20)
     idempotency_key: str = Field(min_length=8, max_length=160)
 
 

@@ -162,6 +162,7 @@ class Message {
   final String? ja;
   final String? back;
   final String? translated;
+  final String sourceLanguage;
   final bool warn;
   final String lane;
   const Message({
@@ -172,6 +173,7 @@ class Message {
     this.ja,
     this.back,
     this.translated,
+    this.sourceLanguage = 'ja',
     this.warn = false,
     this.lane = 'machine',
   });
@@ -184,6 +186,7 @@ class Message {
     ja: j['ja'] as String?,
     back: j['back'] as String?,
     translated: j['translated'] as String?,
+    sourceLanguage: j['source_language'] as String? ?? 'ja',
     warn: j['warn'] as bool? ?? false,
     lane: j['lane'] as String? ?? 'machine',
   );
@@ -261,10 +264,11 @@ class CabinStore extends ChangeNotifier {
   void applyBackendMessage(Map<String, dynamic> message) {
     _putMessage({
       'id': message['id'],
-      'from': 'crew',
+      'from': message['from'] ?? 'crew',
       'status': message['status'] ?? 'sent',
       'original': message['original'] ?? '',
       'translated': message['translated'],
+      'source_language': message['source_language'] ?? 'ja',
       'lane': message['lane'] ?? 'machine',
     });
     notifyListeners();

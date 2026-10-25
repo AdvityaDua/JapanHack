@@ -124,6 +124,27 @@ class CrewApi {
     return CrewRequest.fromJson(jsonDecode(response.body));
   }
 
+  Future<CrewMessage> sendMessage(CrewRequest request, String text) async {
+    if (session == null) throw Exception('Pair the crew tablet first');
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/v1/crew/requests/${request.id}/messages'),
+      headers: {..._headers(), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'text': text,
+        'source_language': 'ja',
+        'idempotency_key':
+            'crew-message-${DateTime.now().microsecondsSinceEpoch}',
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201)
+      throw Exception(
+        'Message failed (${response.statusCode}): ${response.body}',
+      );
+    return CrewMessage.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   Stream<Map<String, dynamic>> connectToEvents() {
     if (session == null) return const Stream.empty();
     final base = Uri.parse(

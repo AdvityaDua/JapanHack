@@ -233,7 +233,7 @@ class _InFlightScreenState extends State<InFlightScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            SpeakBar(lang: lang),
+            SpeakBar(lang: lang, session: s),
             if (s.store.link != LinkState.online)
               Align(
                 alignment: Alignment.centerLeft,

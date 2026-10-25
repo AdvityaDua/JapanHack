@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -6,6 +8,8 @@ import 'conversation.dart';
 import 'engines.dart';
 import 'kit.dart';
 import 'languages.dart';
+import 'protocol.dart';
+import 'session.dart';
 import 'theme.dart';
 
 /// Speak and translate, open ended, on the phone. The passenger talks in their own language and the other person hears
@@ -16,7 +20,13 @@ class TranslateScreen extends StatefulWidget {
 
   /// Tests pass their own engines.
   final ConversationController? controller;
-  const TranslateScreen({super.key, required this.lang, this.controller});
+  final CabinSession? session;
+  const TranslateScreen({
+    super.key,
+    required this.lang,
+    this.controller,
+    this.session,
+  });
 
   @override
   State<TranslateScreen> createState() => _TranslateScreenState();
@@ -29,6 +39,9 @@ class _TranslateScreenState extends State<TranslateScreen> {
   bool? modelsReady;
   bool downloadingModels = false;
   String? modelError;
+  String? remoteError;
+  final List<_RemoteLine> remoteLines = [];
+  final Set<String> seenRemoteMessages = {};
   late final bool ownsController;
 
   @override
@@ -43,8 +56,56 @@ class _TranslateScreenState extends State<TranslateScreen> {
           myLang: widget.lang,
           speak: (t, lang) =>
               speakText(t, lang == 'ja' ? 'ja-JP' : langByCode(lang).tts),
+          onTranslated: _sendTurnToCrew,
         );
     _checkModels();
+    widget.session?.store.addListener(_onCabinChanged);
+    _onCabinChanged();
+  }
+
+  Future<void> _sendTurnToCrew(Turn turn) async {
+    final session = widget.session;
+    if (session == null || turn.side != Side.me || turn.translated == null)
+      return;
+    final sent = await session.link.sendLiveTranslation(
+      text: turn.original,
+      translatedText: turn.translated!,
+      sourceLanguage: turn.fromLang,
+    );
+    if (mounted && !sent) {
+      setState(
+        () => remoteError =
+            'The live cabin line is unavailable. Your translation stayed on this phone.',
+      );
+    }
+  }
+
+  void _onCabinChanged() {
+    final session = widget.session;
+    if (session == null) return;
+    for (final message in session.store.thread.where((item) => item.fromCrew)) {
+      if (!seenRemoteMessages.add(message.id)) continue;
+      final line = _RemoteLine(message: message);
+      remoteLines.add(line);
+      _translateRemoteLine(line);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _translateRemoteLine(_RemoteLine line) async {
+    final message = line.message;
+    final translated =
+        message.translated ??
+        await c.translator.translate(
+          message.original,
+          message.sourceLanguage,
+          widget.lang,
+        );
+    if (!mounted) return;
+    setState(() => line.translated = translated ?? message.original);
+    if (translated != null && c.speakAloud) {
+      unawaited(c.speak(translated, widget.lang));
+    }
   }
 
   Future<void> _checkModels() async {
@@ -99,6 +160,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
   @override
   void dispose() {
     if (ownsController) c.dispose();
+    widget.session?.store.removeListener(_onCabinChanged);
     text.dispose();
     super.dispose();
   }
@@ -240,6 +302,11 @@ class _TranslateScreenState extends State<TranslateScreen> {
             ),
           ),
           children: [
+            if (widget.session != null) _liveCabinBanner(),
+            if (remoteLines.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              for (final line in remoteLines.reversed) _remoteLine(line),
+            ],
             if (modelsReady != true)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -397,6 +464,89 @@ class _TranslateScreenState extends State<TranslateScreen> {
       },
     );
   }
+
+  Widget _liveCabinBanner() => PaperCard(
+    spine: good,
+    color: good.withValues(alpha: .08),
+    child: Row(
+      children: [
+        const Icon(Icons.cell_tower_rounded, color: good, size: 28),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Live cabin translation',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: aiDeep,
+                ),
+              ),
+              Text(
+                'Your seat is linked to the crew tablet. Speak here and the translated text is delivered to your crew.',
+                style: const TextStyle(color: sumiSoft, height: 1.35),
+              ),
+            ],
+          ),
+        ),
+        Icon(
+          widget.session!.link.online
+              ? Icons.cloud_done_rounded
+              : Icons.cloud_off_rounded,
+          color: widget.session!.link.online ? good : warn,
+        ),
+      ],
+    ),
+  );
+
+  Widget _remoteLine(_RemoteLine line) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: PaperCard(
+      spine: shu,
+      color: shu.withValues(alpha: .08),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Crew · translated on your phone',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: shu,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            line.translated ?? 'Translating…',
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: aiDeep,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            line.message.original,
+            style: const TextStyle(fontSize: 13, color: sumiSoft),
+          ),
+          if (remoteError != null)
+            Text(
+              remoteError!,
+              style: const TextStyle(fontSize: 12, color: warn),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _RemoteLine {
+  _RemoteLine({required this.message});
+  final Message message;
+  String? translated;
 }
 
 class _Intro extends StatelessWidget {

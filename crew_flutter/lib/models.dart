@@ -70,6 +70,35 @@ class CrewRequest {
       .join(' ');
 }
 
+class CrewMessage {
+  const CrewMessage({
+    required this.id,
+    required this.from,
+    required this.original,
+    this.translated,
+    this.sourceLanguage = 'ja',
+    required this.createdAt,
+  });
+  final String id;
+  final String from;
+  final String original;
+  final String? translated;
+  final String sourceLanguage;
+  final DateTime createdAt;
+  bool get fromPassenger => from == 'passenger';
+
+  factory CrewMessage.fromJson(Map<String, dynamic> json) => CrewMessage(
+    id: json['id']?.toString() ?? '',
+    from: json['from']?.toString() ?? 'passenger',
+    original: json['original']?.toString() ?? '',
+    translated: json['translated']?.toString(),
+    sourceLanguage: json['source_language']?.toString() ?? 'ja',
+    createdAt:
+        DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+        DateTime.now(),
+  );
+}
+
 class CrewSeat {
   const CrewSeat({
     required this.seatNumber,

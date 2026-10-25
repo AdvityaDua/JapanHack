@@ -37,6 +37,7 @@ class ConversationController extends ChangeNotifier {
 
   /// Speaks a sentence in a language. Replaceable in tests.
   final Future<void> Function(String text, String lang) speak;
+  final Future<void> Function(Turn turn)? onTranslated;
   final Duration partialDelay;
   bool speakAloud;
 
@@ -45,6 +46,7 @@ class ConversationController extends ChangeNotifier {
     required this.translator,
     required this.myLang,
     required this.speak,
+    this.onTranslated,
     this.partialDelay = const Duration(milliseconds: 250),
     this.speakAloud = true,
   });
@@ -200,12 +202,14 @@ class ConversationController extends ChangeNotifier {
           translateTime: watch.elapsed,
         ),
       );
+      final turn = history.last;
       heard = '';
       heardTranslation = null;
       if (speakAloud && out.isNotEmpty) {
         // the translation is read aloud in the language the listener needs
         unawaited(speak(out, otherLang(side)));
       }
+      if (onTranslated != null) unawaited(onTranslated!(turn));
     }
     notifyListeners();
   }
