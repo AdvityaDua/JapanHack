@@ -36,7 +36,8 @@ class FakeCabin {
     c.foreign.stream.listen((m) {
       final msg = jsonDecode(m as String) as Map<String, dynamic>;
       inbox.add(msg);
-      if (autoPong && msg['t'] == 'ping') c.foreign.sink.add(jsonEncode({'t': 'pong'}));
+      if (autoPong && msg['t'] == 'ping')
+        c.foreign.sink.add(jsonEncode({'t': 'pong'}));
     });
     connections.add(c);
     return c.local;
@@ -44,20 +45,54 @@ class FakeCabin {
 
   StreamChannelController<dynamic> get last => connections.last;
   List<Map<String, dynamic>> get lastInbox => received.last;
-  void push(Map<String, dynamic> msg, [StreamChannelController<dynamic>? to]) => (to ?? last).foreign.sink.add(jsonEncode(msg));
-  void welcome([Map<String, dynamic> extra = const {}]) => push({'t': 'welcome', 'passenger': {'seat': '24C'}, 'requests': [], 'announcements': [], 'exit_check': null, 'checkin': null, 'thread': [], ...extra});
-  Future<void> drop([StreamChannelController<dynamic>? c]) => (c ?? last).foreign.sink.close();
+  void push(Map<String, dynamic> msg, [StreamChannelController<dynamic>? to]) =>
+      (to ?? last).foreign.sink.add(jsonEncode(msg));
+  void welcome([Map<String, dynamic> extra = const {}]) => push({
+    't': 'welcome',
+    'passenger': {'seat': '24C'},
+    'requests': [],
+    'announcements': [],
+    'exit_check': null,
+    'checkin': null,
+    'thread': [],
+    ...extra,
+  });
+  Future<void> drop([StreamChannelController<dynamic>? c]) =>
+      (c ?? last).foreign.sink.close();
 }
 
-Map<String, dynamic> request(String id, String intent, {String status = 'new', int urgency = 1, List<Map<String, dynamic>> replies = const [], double? understood, double created = 1}) =>
-    {'id': id, 'seat': '24C', 'intent': intent, 'urgency': urgency, 'via': 'tap', 'status': status, 'created': created, 'replies': replies, 'understood_at': understood};
-
+Map<String, dynamic> request(
+  String id,
+  String intent, {
+  String status = 'new',
+  int urgency = 1,
+  List<Map<String, dynamic>> replies = const [],
+  double? understood,
+  double created = 1,
+}) => {
+  'id': id,
+  'seat': '24C',
+  'intent': intent,
+  'urgency': urgency,
+  'via': 'tap',
+  'status': status,
+  'created': created,
+  'replies': replies,
+  'understood_at': understood,
+};
 
 /// A cabin session that is already connected to a [FakeCabin] (no heartbeat, so no timers are left over).
-Future<(CabinSession, FakeCabin)> onlineSession(WidgetTester t, {Profile? profile}) async {
+Future<(CabinSession, FakeCabin)> onlineSession(
+  WidgetTester t, {
+  Profile? profile,
+}) async {
   final p = profile ?? Profile(lang: 'hi', seat: '24C');
   final cabin = FakeCabin();
-  final session = CabinSession.forProfile(p, makeLink: (store) => CabinLink(store, factory: cabin.open, pingEvery: Duration.zero));
+  final session = CabinSession.forProfile(
+    p,
+    makeLink: (store) =>
+        CabinLink(store, factory: cabin.open, pingEvery: Duration.zero),
+  );
   addTearDown(session.dispose);
   session.connect('http://cabin.test:8000');
   await t.pump();
@@ -104,7 +139,8 @@ class FakeSpeech implements SpeechEngine {
   @override
   Future<void> stop() async => stops++;
 
-  void say(String text, {bool isFinal = false}) => out!.add(SpeechEvent(text, isFinal: isFinal));
+  void say(String text, {bool isFinal = false}) =>
+      out!.add(SpeechEvent(text, isFinal: isFinal));
   void fail(String error) => out!.add(SpeechEvent('', error: error));
   Future<void> hangUp() => out!.close();
 }
@@ -115,7 +151,14 @@ class FakeTranslator implements TextTranslator {
   final Map<String, Duration> delays;
   final List<String> calls = [];
   bool broken = false;
-  FakeTranslator(this.table, {this.pairs = const {'hi>ja', 'ja>hi'}, this.delays = const {}});
+  FakeTranslator(
+    this.table, {
+    this.pairs = const {'hi>ja', 'ja>hi'},
+    this.delays = const {},
+  });
+
+  @override
+  String? get lastError => null;
 
   @override
   bool supports(String from, String to) => pairs.contains('$from>$to');
@@ -128,4 +171,3 @@ class FakeTranslator implements TextTranslator {
     return broken ? null : table[text];
   }
 }
-

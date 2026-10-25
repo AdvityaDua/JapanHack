@@ -35,13 +35,23 @@ class AndroidSpeechEngine implements SpeechEngine {
 
   Future<bool> _init() async {
     if (_ready) return true;
-    return _ready = await _stt.initialize(onError: (e) => _out?.add(SpeechEvent('', error: e.errorMsg)), debugLogging: false);
+    return _ready = await _stt.initialize(
+      onError: (e) {
+        final out = _out;
+        if (out != null && !out.isClosed) {
+          out.add(SpeechEvent('', error: e.errorMsg));
+        }
+      },
+      debugLogging: false,
+    );
   }
 
   @override
   Future<bool> supports(String locale) async {
     if (!await _init()) return false;
-    _locales ??= [for (final l in await _stt.locales()) l.localeId.replaceAll('-', '_')];
+    _locales ??= [
+      for (final l in await _stt.locales()) l.localeId.replaceAll('-', '_'),
+    ];
     return _locales!.contains(locale.replaceAll('-', '_'));
   }
 
@@ -50,26 +60,34 @@ class AndroidSpeechEngine implements SpeechEngine {
     _out?.close();
     final out = _out = StreamController<SpeechEvent>();
     () async {
-      if (!await _init()) {
-        out.add(const SpeechEvent('', error: 'speech_unavailable'));
-        await out.close();
-        return;
+      try {
+        if (!await _init()) {
+          out.add(const SpeechEvent('', error: 'speech_unavailable'));
+          await out.close();
+          return;
+        }
+        await _stt.listen(
+          onResult: (r) {
+            if (!out.isClosed)
+              out.add(SpeechEvent(r.recognizedWords, isFinal: r.finalResult));
+            if (r.finalResult && !out.isClosed) out.close();
+          },
+          listenOptions: SpeechListenOptions(
+            localeId: locale,
+            listenFor: const Duration(seconds: 30),
+            pauseFor: const Duration(seconds: 2),
+            onDevice: true,
+            partialResults: true,
+            cancelOnError: true,
+            listenMode: ListenMode.dictation,
+          ),
+        );
+      } catch (e) {
+        if (!out.isClosed) {
+          out.add(SpeechEvent('', error: 'speech_exception:$e'));
+          await out.close();
+        }
       }
-      await _stt.listen(
-        onResult: (r) {
-          if (!out.isClosed) out.add(SpeechEvent(r.recognizedWords, isFinal: r.finalResult));
-          if (r.finalResult && !out.isClosed) out.close();
-        },
-        listenOptions: SpeechListenOptions(
-          localeId: locale,
-          listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 2),
-          onDevice: true,
-          partialResults: true,
-          cancelOnError: true,
-          listenMode: ListenMode.dictation,
-        ),
-      );
     }();
     return out.stream;
   }
@@ -84,31 +102,59 @@ abstract class TextTranslator {
   /// Whether this engine can translate [from] to [to] (language codes like "hi", "ja").
   bool supports(String from, String to);
 
+  /// A diagnostic from the most recent failed translation, when available.
+  /// This is intentionally optional so test and future engines can remain small.
+  String? get lastError => null;
+
   /// The translation, or null when it cannot be produced (model missing).
   Future<String?> translate(String text, String from, String to);
 }
 
-TranslateLanguage? _mlOf(String code) => code == 'ja' ? TranslateLanguage.japanese : langByCode(code).ml;
+TranslateLanguage? _mlOf(String code) =>
+    code == 'ja' ? TranslateLanguage.japanese : langByCode(code).ml;
 
 /// ML Kit's on-device translator. Translators are kept open between calls so each sentence costs milliseconds.
 class MlKitTranslator implements TextTranslator {
   final Map<String, OnDeviceTranslator> _open = {};
-  final OnDeviceTranslatorModelManager _models = OnDeviceTranslatorModelManager();
+  final OnDeviceTranslatorModelManager _models =
+      OnDeviceTranslatorModelManager();
+  String? _lastError;
 
   @override
-  bool supports(String from, String to) => _mlOf(from) != null && _mlOf(to) != null;
+  String? get lastError => _lastError;
+
+  @override
+  bool supports(String from, String to) =>
+      _mlOf(from) != null && _mlOf(to) != null;
 
   @override
   Future<String?> translate(String text, String from, String to) async {
+    _lastError = null;
     if (text.trim().isEmpty) return '';
     if (from == to) return text;
     final a = _mlOf(from), b = _mlOf(to);
-    if (a == null || b == null) return null;
+    if (a == null || b == null) {
+      _lastError = 'unsupported_language:$from>$to';
+      return null;
+    }
     try {
-      if (!await _models.isModelDownloaded(a.bcpCode) || !await _models.isModelDownloaded(b.bcpCode)) return null;
-      final t = _open.putIfAbsent('$from>$to', () => OnDeviceTranslator(sourceLanguage: a, targetLanguage: b));
+      final sourceReady = await _models.isModelDownloaded(a.bcpCode);
+      final targetReady = await _models.isModelDownloaded(b.bcpCode);
+      if (!sourceReady || !targetReady) {
+        final missing = [
+          if (!sourceReady) a.bcpCode,
+          if (!targetReady) b.bcpCode,
+        ].join(',');
+        _lastError = 'missing_model:$missing';
+        return null;
+      }
+      final t = _open.putIfAbsent(
+        '$from>$to',
+        () => OnDeviceTranslator(sourceLanguage: a, targetLanguage: b),
+      );
       return await t.translateText(text);
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString();
       return null;
     }
   }
@@ -128,7 +174,12 @@ class CompositeTranslator implements TextTranslator {
   CompositeTranslator(this.engines);
 
   @override
-  bool supports(String from, String to) => engines.any((e) => e.supports(from, to));
+  String? get lastError =>
+      engines.map((e) => e.lastError).whereType<String>().firstOrNull;
+
+  @override
+  bool supports(String from, String to) =>
+      engines.any((e) => e.supports(from, to));
 
   @override
   Future<String?> translate(String text, String from, String to) async {
@@ -143,7 +194,7 @@ class CompositeTranslator implements TextTranslator {
 
 /// The recogniser's locale for a language code.
 String speechLocale(String code) => switch (code) {
-      'ja' => 'ja_JP',
-      'en' => 'en_IN',
-      _ => langByCode(code).tts.replaceAll('-', '_'),
-    };
+  'ja' => 'ja_JP',
+  'en' => 'en_IN',
+  _ => langByCode(code).tts.replaceAll('-', '_'),
+};

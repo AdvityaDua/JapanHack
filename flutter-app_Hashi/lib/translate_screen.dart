@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'content.dart' show speakText;
 import 'conversation.dart';
@@ -54,12 +55,13 @@ class _TranslateScreenState extends State<TranslateScreen> {
     try {
       final ready = await Kit.ready(widget.lang);
       if (mounted) setState(() => modelsReady = ready);
-    } catch (_) {
+    } catch (e) {
       if (mounted)
         setState(() {
           modelsReady = false;
-          modelError =
-              'This device cannot check the offline translation models.';
+          modelError = kIsWeb
+              ? 'Offline ML Kit translation is not available in Chrome. Run the passenger app on Android or iOS, then download the language kit.'
+              : 'Could not check the offline translation models: $e';
         });
     }
   }
@@ -82,12 +84,14 @@ class _TranslateScreenState extends State<TranslateScreen> {
               ? null
               : 'Some required models could not be downloaded.';
         });
-    } catch (_) {
+    } catch (e) {
       if (mounted)
         setState(() {
           downloadingModels = false;
           modelsReady = false;
-          modelError = 'Download failed. Connect to Wi-Fi and try again.';
+          modelError = kIsWeb
+              ? 'Model downloads require the Android or iOS app; Chrome cannot install ML Kit models.'
+              : 'Download failed: $e';
         });
     }
   }
@@ -202,7 +206,10 @@ class _TranslateScreenState extends State<TranslateScreen> {
                           sub: mine,
                           color: ai,
                           active: c.listening == Side.me,
-                          enabled: modelsReady == true,
+                          // Speech and translation have separate failure modes.
+                          // Keep the microphone usable so the screen can show the
+                          // real speech/model error instead of a dead button.
+                          enabled: true,
                           onTap: () => toggle(Side.me),
                         ),
                       ),
@@ -213,7 +220,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
                           sub: '日本語',
                           color: shuBright,
                           active: c.listening == Side.them,
-                          enabled: modelsReady == true,
+                          enabled: true,
                           onTap: () => toggle(Side.them),
                         ),
                       ),
