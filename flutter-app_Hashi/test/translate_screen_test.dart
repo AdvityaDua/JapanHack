@@ -19,76 +19,124 @@ Future<void> settle(WidgetTester t) async {
   }
 }
 
-({ConversationController c, FakeSpeech s, FakeTranslator tr, List<String> spoken}) make({FakeSpeech? speech, FakeTranslator? translator}) {
+({
+  ConversationController c,
+  FakeSpeech s,
+  FakeTranslator tr,
+  List<String> spoken,
+})
+make({FakeSpeech? speech, FakeTranslator? translator}) {
   final s = speech ?? FakeSpeech();
-  final tr = translator ?? FakeTranslator({'mujhe paani': '私に水', 'mujhe paani chahiye': 'お水をください', 'お水です': 'यह पानी है'});
+  final tr =
+      translator ??
+      FakeTranslator({
+        'mujhe paani': '私に水',
+        'mujhe paani chahiye': 'お水をください',
+        'お水です': 'यह पानी है',
+      });
   final spoken = <String>[];
-  final c = ConversationController(speech: s, translator: tr, myLang: 'hi', speak: (text, lang) async => spoken.add('$lang:$text'), partialDelay: const Duration(milliseconds: 10));
+  final c = ConversationController(
+    speech: s,
+    translator: tr,
+    myLang: 'hi',
+    speak: (text, lang) async => spoken.add('$lang:$text'),
+    partialDelay: const Duration(milliseconds: 10),
+  );
   addTearDown(c.dispose);
   return (c: c, s: s, tr: tr, spoken: spoken);
 }
 
 Future<void> show(WidgetTester t, ConversationController c) async {
   tall(t);
-  await t.pumpWidget(MaterialApp(theme: buildTheme(), home: TranslateScreen(lang: 'hi', controller: c)));
+  await t.pumpWidget(
+    MaterialApp(
+      theme: buildTheme(),
+      home: TranslateScreen(lang: 'hi', controller: c),
+    ),
+  );
   await settle(t);
 }
 
 void main() {
-  testWidgets('two big microphone buttons, one for each person, and a plain explanation to start', (t) async {
-    final m = make();
-    await show(t, m.c);
-    expect(find.text('I speak'), findsOneWidget);
-    expect(find.text('They speak'), findsOneWidget);
-    expect(find.text('हिन्दी'), findsOneWidget); // the passenger's language is named on their button
-    expect(find.text('日本語'), findsOneWidget);
-    for (final label in ['I speak', 'They speak']) {
-      final size = t.getSize(find.ancestor(of: find.text(label), matching: find.byType(FilledButton)).first);
-      expect(size.height, greaterThanOrEqualTo(80), reason: label);
-    }
-    expect(find.textContaining('Tap "I speak"'), findsOneWidget);
-  });
+  testWidgets(
+    'two big microphone buttons, one for each person, and a plain explanation to start',
+    (t) async {
+      final m = make();
+      await show(t, m.c);
+      expect(find.text('I speak'), findsOneWidget);
+      expect(find.text('They speak'), findsOneWidget);
+      expect(
+        find.text('हिन्दी'),
+        findsOneWidget,
+      ); // the passenger's language is named on their button
+      expect(find.text('日本語'), findsOneWidget);
+      for (final label in ['I speak', 'They speak']) {
+        final size = t.getSize(
+          find
+              .ancestor(
+                of: find.text(label),
+                matching: find.byType(FilledButton),
+              )
+              .first,
+        );
+        expect(size.height, greaterThanOrEqualTo(80), reason: label);
+      }
+      expect(find.textContaining('Tap "I speak"'), findsOneWidget);
+    },
+  );
 
-  testWidgets('tapping "I speak" listens in the passenger\'s language, and the words and Japanese appear while talking', (t) async {
-    final m = make();
-    await show(t, m.c);
-    await t.tap(find.text('I speak'));
-    await settle(t);
-    expect(m.s.asked, ['hi_IN']);
-    expect(find.text('Listening to you…'), findsOneWidget);
-    expect(find.text('Tap to stop'), findsOneWidget);
+  testWidgets(
+    'tapping "I speak" listens in the passenger\'s language, and the words and Japanese appear while talking',
+    (t) async {
+      final m = make();
+      await show(t, m.c);
+      await t.tap(find.text('I speak'));
+      await settle(t);
+      expect(m.s.asked, ['hi_IN']);
+      expect(find.text('Listening to you…'), findsOneWidget);
+      expect(find.text('Tap to stop'), findsOneWidget);
 
-    m.s.say('mujhe paani');
-    await settle(t);
-    expect(find.text('mujhe paani'), findsOneWidget);
-    expect(find.text('私に水'), findsOneWidget);
-  });
+      m.s.say('mujhe paani');
+      await settle(t);
+      expect(find.text('mujhe paani'), findsOneWidget);
+      expect(find.text('私に水'), findsOneWidget);
+    },
+  );
 
-  testWidgets('when speech ends the turn moves to the history with its Japanese, its time, and it is read aloud', (t) async {
-    final m = make();
-    await show(t, m.c);
-    await t.tap(find.text('I speak'));
-    await settle(t);
-    m.s.say('mujhe paani chahiye', isFinal: true);
-    await settle(t);
-    expect(find.text('お水をください'), findsOneWidget);
-    expect(find.text('mujhe paani chahiye'), findsOneWidget);
-    expect(find.textContaining(' s'), findsWidgets); // how long the translation took
-    expect(m.spoken, ['ja:お水をください']);
-    expect(find.text('Listening to you…'), findsNothing);
-  });
+  testWidgets(
+    'when speech ends the turn moves to the history with its Japanese, its time, and it is read aloud',
+    (t) async {
+      final m = make();
+      await show(t, m.c);
+      await t.tap(find.text('I speak'));
+      await settle(t);
+      m.s.say('mujhe paani chahiye', isFinal: true);
+      await settle(t);
+      expect(find.text('お水をください'), findsOneWidget);
+      expect(find.text('mujhe paani chahiye'), findsOneWidget);
+      expect(
+        find.textContaining(' s'),
+        findsWidgets,
+      ); // how long the translation took
+      expect(m.spoken, ['ja:お水をください']);
+      expect(find.text('Listening to you…'), findsNothing);
+    },
+  );
 
-  testWidgets('"They speak" listens in Japanese and shows the translation for the passenger', (t) async {
-    final m = make();
-    await show(t, m.c);
-    await t.tap(find.text('They speak'));
-    await settle(t);
-    expect(m.s.asked, ['ja_JP']);
-    m.s.say('お水です', isFinal: true);
-    await settle(t);
-    expect(find.text('यह पानी है'), findsOneWidget);
-    expect(m.spoken, ['hi:यह पानी है']);
-  });
+  testWidgets(
+    '"They speak" listens in Japanese and shows the translation for the passenger',
+    (t) async {
+      final m = make();
+      await show(t, m.c);
+      await t.tap(find.text('They speak'));
+      await settle(t);
+      expect(m.s.asked, ['ja_JP']);
+      m.s.say('お水です', isFinal: true);
+      await settle(t);
+      expect(find.text('यह पानी है'), findsOneWidget);
+      expect(m.spoken, ['hi:यह पानी है']);
+    },
+  );
 
   testWidgets('tapping the same button again stops listening', (t) async {
     final m = make();
@@ -101,23 +149,28 @@ void main() {
     expect(m.s.stops, 1);
   });
 
-  testWidgets('a language the phone cannot listen to offline gives a clear message and a how-to', (t) async {
-    final m = make(speech: FakeSpeech({'ja_JP'}));
-    await show(t, m.c);
-    await t.tap(find.text('I speak'));
-    await settle(t);
-    expect(find.textContaining('offline speech pack'), findsOneWidget);
-    await t.tap(find.text('How to set up'));
-    await settle(t);
-    expect(find.textContaining('Offline speech recognition'), findsOneWidget);
-    await t.tap(find.text('OK'));
-    await settle(t);
-    await t.tap(find.text('Dismiss'));
-    await settle(t);
-    expect(find.textContaining('offline speech pack'), findsNothing);
-  });
+  testWidgets(
+    'a language the phone cannot listen to offline gives a clear message and a how-to',
+    (t) async {
+      final m = make(speech: FakeSpeech({'ja_JP'}));
+      await show(t, m.c);
+      await t.tap(find.text('I speak'));
+      await settle(t);
+      expect(find.textContaining('offline speech model'), findsOneWidget);
+      await t.tap(find.text('How to set up'));
+      await settle(t);
+      expect(find.textContaining('Sherpa/ONNX models'), findsOneWidget);
+      await t.tap(find.text('OK'));
+      await settle(t);
+      await t.tap(find.text('Dismiss'));
+      await settle(t);
+      expect(find.textContaining('offline speech model'), findsNothing);
+    },
+  );
 
-  testWidgets('a missing translation model says to download the language kit', (t) async {
+  testWidgets('a missing translation model says to download the language kit', (
+    t,
+  ) async {
     final m = make(translator: FakeTranslator({}, pairs: {}));
     await show(t, m.c);
     await t.tap(find.text('I speak'));
@@ -141,19 +194,22 @@ void main() {
     expect(find.text('यह पानी है'), findsOneWidget);
   });
 
-  testWidgets('reading aloud can be switched off, and any line can be replayed', (t) async {
-    final m = make();
-    await show(t, m.c);
-    await t.tap(find.byTooltip('Reading aloud is on'));
-    await settle(t);
-    expect(m.c.speakAloud, false);
-    await t.tap(find.text('I speak'));
-    await settle(t);
-    m.s.say('mujhe paani chahiye', isFinal: true);
-    await settle(t);
-    expect(m.spoken, isEmpty);
-    await t.tap(find.byTooltip('Read aloud'));
-    await settle(t);
-    expect(m.spoken, ['ja:お水をください']);
-  });
+  testWidgets(
+    'reading aloud can be switched off, and any line can be replayed',
+    (t) async {
+      final m = make();
+      await show(t, m.c);
+      await t.tap(find.byTooltip('Reading aloud is on'));
+      await settle(t);
+      expect(m.c.speakAloud, false);
+      await t.tap(find.text('I speak'));
+      await settle(t);
+      m.s.say('mujhe paani chahiye', isFinal: true);
+      await settle(t);
+      expect(m.spoken, isEmpty);
+      await t.tap(find.byTooltip('Read aloud'));
+      await settle(t);
+      expect(m.spoken, ['ja:お水をください']);
+    },
+  );
 }

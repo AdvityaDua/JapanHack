@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'content.dart' show speakText;
 import 'conversation.dart';
+import 'asr_engine.dart';
 import 'engines.dart';
 import 'kit.dart';
 import 'languages.dart';
+import 'models.dart';
 import 'protocol.dart';
 import 'session.dart';
 import 'theme.dart';
@@ -33,7 +35,11 @@ class TranslateScreen extends StatefulWidget {
 }
 
 class _TranslateScreenState extends State<TranslateScreen> {
-  late final ConversationController c;
+  ConversationController? _controller;
+  SherpaSpeechEngine? _speechEngine;
+  bool speechModelsLoading = false;
+  bool speechModelsReady = false;
+  String? speechModelError;
   final text = TextEditingController();
   bool typing = false;
   bool? modelsReady;
@@ -44,23 +50,69 @@ class _TranslateScreenState extends State<TranslateScreen> {
   final Set<String> seenRemoteMessages = {};
   late final bool ownsController;
 
+  ConversationController get c => _controller!;
+
   @override
   void initState() {
     super.initState();
     ownsController = widget.controller == null;
-    c =
-        widget.controller ??
-        ConversationController(
-          speech: AndroidSpeechEngine(),
-          translator: CompositeTranslator([MlKitTranslator()]),
-          myLang: widget.lang,
-          speak: (t, lang) =>
-              speakText(t, lang == 'ja' ? 'ja-JP' : langByCode(lang).tts),
-          onTranslated: _sendTurnToCrew,
-        );
+    if (widget.controller != null) {
+      _controller = widget.controller;
+      speechModelsReady = true;
+    } else {
+      speechModelsLoading = true;
+      unawaited(_initOfflineSpeech());
+    }
     _checkModels();
     widget.session?.store.addListener(_onCabinChanged);
     _onCabinChanged();
+  }
+
+  Future<void> _initOfflineSpeech() async {
+    try {
+      final store = await ModelStore.open();
+      final engine = SherpaSpeechEngine(store);
+      _speechEngine = engine;
+      final invalid = <String>[
+        for (final model in speechModels) ...store.invalidFiles(model),
+      ];
+      if (invalid.isNotEmpty) {
+        speechModelError =
+            'Missing or invalid speech model files: ${invalid.join(', ')}';
+      } else {
+        // Loading is intentional: supports() only checks files, while
+        // prepare() starts the Sherpa worker and constructs the recogniser in
+        // its isolate. This is the real readiness check before enabling Speak.
+        final passengerReady = await engine.prepare(speechLocale(widget.lang));
+        final crewReady = await engine.prepare('ja_JP');
+        speechModelsReady = passengerReady && crewReady;
+        if (!speechModelsReady) {
+          speechModelError =
+              'Speech model files are present, but Sherpa could not load them into memory.';
+        }
+      }
+      _controller = ConversationController(
+        speech: engine,
+        translator: CompositeTranslator([MlKitTranslator()]),
+        myLang: widget.lang,
+        speak: (t, lang) =>
+            speakText(t, lang == 'ja' ? 'ja-JP' : langByCode(lang).tts),
+        onTranslated: _sendTurnToCrew,
+      );
+    } catch (e) {
+      speechModelError = 'Offline speech setup failed: $e';
+      _controller = ConversationController(
+        speech: _UnavailableSpeechEngine(),
+        translator: CompositeTranslator([MlKitTranslator()]),
+        myLang: widget.lang,
+        speak: (t, lang) =>
+            speakText(t, lang == 'ja' ? 'ja-JP' : langByCode(lang).tts),
+        onTranslated: _sendTurnToCrew,
+      );
+    } finally {
+      speechModelsLoading = false;
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _sendTurnToCrew(Turn turn) async {
@@ -159,7 +211,8 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
   @override
   void dispose() {
-    if (ownsController) c.dispose();
+    if (ownsController) _controller?.dispose();
+    _speechEngine?.dispose();
     widget.session?.store.removeListener(_onCabinChanged);
     text.dispose();
     super.dispose();
@@ -168,6 +221,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
   String get mine => langByCode(widget.lang).name;
 
   void toggle(Side side) {
+    if (_controller == null) return;
     if (c.listening == side) {
       c.stopListening();
     } else {
@@ -184,8 +238,36 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final controller = _controller;
+    if (controller == null) {
+      return WashiPage(
+        title: 'Speak & translate',
+        kanji: '通訳',
+        children: [
+          PaperCard(
+            spine: ai,
+            child: Row(
+              children: const [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Checking and loading offline speech models into memory…',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     return AnimatedBuilder(
-      animation: c,
+      animation: controller,
       builder: (context, _) {
         final live = c.listening != null || c.heard.isNotEmpty;
         return WashiPage(
@@ -271,7 +353,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
                           // Speech and translation have separate failure modes.
                           // Keep the microphone usable so the screen can show the
                           // real speech/model error instead of a dead button.
-                          enabled: true,
+                          enabled: speechModelsReady && !speechModelsLoading,
                           onTap: () => toggle(Side.me),
                         ),
                       ),
@@ -282,7 +364,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
                           sub: '日本語',
                           color: shuBright,
                           active: c.listening == Side.them,
-                          enabled: true,
+                          enabled: speechModelsReady && !speechModelsLoading,
                           onTap: () => toggle(Side.them),
                         ),
                       ),
@@ -303,6 +385,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
           ),
           children: [
             if (widget.session != null) _liveCabinBanner(),
+            _speechAuditCard(),
             if (remoteLines.isNotEmpty) ...[
               const SizedBox(height: 12),
               for (final line in remoteLines.reversed) _remoteLine(line),
@@ -462,6 +545,62 @@ class _TranslateScreenState extends State<TranslateScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _speechAuditCard() {
+    final ready = speechModelsReady && !speechModelsLoading;
+    final title = speechModelsLoading
+        ? 'Checking offline speech models…'
+        : ready
+        ? 'Offline speech models ready'
+        : 'Offline speech models are not ready';
+    final detail = speechModelsLoading
+        ? 'Checking folder names, file sizes, and loading the selected recognisers into memory.'
+        : ready
+        ? 'Sherpa/ONNX is loaded in memory for ${langByCode(widget.lang).name} and 日本語. Speaking works without internet.'
+        : (speechModelError ??
+              'Download the speech models before using Speak.');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: PaperCard(
+        spine: ready ? good : warn,
+        color: ready ? good.withValues(alpha: .08) : const Color(0xFFFFF5E1),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              ready ? Icons.memory_rounded : Icons.warning_amber_rounded,
+              color: ready ? good : warn,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    detail,
+                    style: const TextStyle(color: sumiSoft, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+            if (speechModelsLoading)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else if (ready)
+              const Icon(Icons.check_circle_rounded, color: good),
+          ],
+        ),
+      ),
     );
   }
 
@@ -717,11 +856,11 @@ class _SetupDialog extends StatelessWidget {
     title: const Text('Listen with no connection'),
     content: const SingleChildScrollView(
       child: Text(
-        'Your phone listens with its own speech engine. To use a language offline:\n\n'
-        '1. Open your phone Settings.\n'
-        '2. Search for "Offline speech recognition" (under Google, or Languages & input, then Voice input).\n'
-        '3. Download the language you need, for example Hindi, Japanese or English (India).\n\n'
-        'Do this once, with Wi-Fi, before the flight.',
+        'HASHI listens with its bundled Sherpa/ONNX models. To use a language offline:\n\n'
+        '1. Connect to the aircraft Wi-Fi.\n'
+        '2. Download the speech models from the model card on the In-flight screen.\n'
+        '3. Wait for the audit to say “Offline speech models ready”.\n\n'
+        'The model files are checked by name and size, then loaded into a worker before the microphone is enabled.',
         style: TextStyle(fontSize: 16, height: 1.4),
       ),
     ),
@@ -732,4 +871,22 @@ class _SetupDialog extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// Keeps the screen usable when the local model store itself cannot be opened,
+/// while making the failure explicit instead of leaving a microphone button
+/// that appears to work but cannot produce audio.
+class _UnavailableSpeechEngine implements SpeechEngine {
+  @override
+  Future<bool> supports(String locale) async => false;
+
+  @override
+  Future<bool> prepare(String locale) async => false;
+
+  @override
+  Stream<SpeechEvent> listen(String locale) =>
+      Stream.value(const SpeechEvent('', error: 'offline_speech_unavailable'));
+
+  @override
+  Future<void> stop() async {}
 }

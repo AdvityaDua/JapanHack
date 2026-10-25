@@ -127,6 +127,9 @@ class FakeSpeech implements SpeechEngine {
   FakeSpeech([this.locales = const {'hi_IN', 'ja_JP', 'pa_IN'}]);
 
   @override
+  Future<bool> prepare(String locale) async => supports(locale);
+
+  @override
   Future<bool> supports(String locale) async => locales.contains(locale);
 
   @override

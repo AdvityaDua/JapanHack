@@ -20,13 +20,24 @@ abstract class SpeechEngine {
   /// Whether this phone can recognise [locale] (like "hi_IN") with no connection.
   Future<bool> supports(String locale);
 
+  /// Checks that the recogniser for [locale] is available and loaded.
+  /// Engines that do not have a separate loading phase can use the default.
+  Future<bool> prepare(String locale) => supports(locale);
+
   /// Words as they are recognised: partial results while talking, then one final result.
   Stream<SpeechEvent> listen(String locale);
 
   Future<void> stop();
 }
 
-/// The phone's own speech recogniser, forced to work offline.
+/// The phone's own speech recogniser.
+///
+/// Android's native recogniser is useful as the demo fallback, but it is not
+/// the same thing as our bundled Sherpa models. Forcing `onDevice: true` here
+/// makes the microphone appear to start while producing no words on devices
+/// that do not have the requested Android speech pack installed. The real
+/// offline path is [SherpaSpeechEngine] in `asr_engine.dart`; this engine is
+/// deliberately network-capable so the demo can speak immediately.
 class AndroidSpeechEngine implements SpeechEngine {
   final SpeechToText _stt = SpeechToText();
   bool _ready = false;
@@ -42,6 +53,13 @@ class AndroidSpeechEngine implements SpeechEngine {
           out.add(SpeechEvent('', error: e.errorMsg));
         }
       },
+      onStatus: (status) {
+        // A status callback is useful when Android stops listening without
+        // returning a transcript. Do not expose ordinary status transitions
+        // as user-facing errors; the stream's error callback remains the
+        // source of truth for failures.
+        assert(status.isNotEmpty);
+      },
       debugLogging: false,
     );
   }
@@ -54,6 +72,9 @@ class AndroidSpeechEngine implements SpeechEngine {
     ];
     return _locales!.contains(locale.replaceAll('-', '_'));
   }
+
+  @override
+  Future<bool> prepare(String locale) => supports(locale);
 
   @override
   Stream<SpeechEvent> listen(String locale) {
@@ -75,8 +96,16 @@ class AndroidSpeechEngine implements SpeechEngine {
           listenOptions: SpeechListenOptions(
             localeId: locale,
             listenFor: const Duration(seconds: 30),
-            pauseFor: const Duration(seconds: 2),
-            onDevice: true,
+            // The native Android recogniser often has no offline pack for
+            // Indian/Southeast Asian locales. In that case onDevice=true
+            // silently starts and then returns no words. Use it only when the
+            // app is explicitly built for that mode; the demo default must
+            // remain usable on a stock Android phone.
+            onDevice: const bool.fromEnvironment(
+              'HASHI_NATIVE_OFFLINE_SPEECH',
+              defaultValue: false,
+            ),
+            pauseFor: const Duration(seconds: 4),
             partialResults: true,
             cancelOnError: true,
             listenMode: ListenMode.dictation,

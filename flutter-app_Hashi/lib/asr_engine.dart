@@ -47,7 +47,16 @@ class RecordMic implements Mic {
   @override
   Future<Stream<Float32List>?> start() async {
     if (!await _rec.hasPermission()) return null;
-    final bytes = await _rec.startStream(const RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: 16000, numChannels: 1, noiseSuppress: true, autoGain: true, echoCancel: true));
+    final bytes = await _rec.startStream(
+      const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 16000,
+        numChannels: 1,
+        noiseSuppress: true,
+        autoGain: true,
+        echoCancel: true,
+      ),
+    );
     return bytes.map((b) {
       final pcm = Int16List.view(Uint8List.fromList(b).buffer);
       final out = Float32List(pcm.length);
@@ -69,33 +78,67 @@ class RecordMic implements Mic {
 class SherpaSpeechEngine implements SpeechEngine {
   final ModelStore store;
   final Mic mic;
+
   /// Starts the worker thread; replaced in tests.
   final Future<AsrBackend> Function(AsrPaths) startBackend;
   AsrBackend? _backend;
   StreamSubscription<Float32List>? _audio;
   StreamSubscription<AsrEvent>? _events;
   StreamController<SpeechEvent>? _out;
+  final Set<String> _prepared = {};
 
-  SherpaSpeechEngine(this.store, {Mic? mic, Future<AsrBackend> Function(AsrPaths)? startBackend})
-      : mic = mic ?? RecordMic(),
-        startBackend = startBackend ?? ((p) async => WorkerBackend(await AsrWorker.start(p)));
+  SherpaSpeechEngine(
+    this.store, {
+    Mic? mic,
+    Future<AsrBackend> Function(AsrPaths)? startBackend,
+  }) : mic = mic ?? RecordMic(),
+       startBackend =
+           startBackend ??
+           ((p) async => WorkerBackend(await AsrWorker.start(p)));
 
   AsrPaths get paths => AsrPaths(
-        vad: store.pathOf(vadModel, 'silero_vad.onnx'),
-        omniModel: store.pathOf(omniModel, 'model.int8.onnx'),
-        omniTokens: store.pathOf(omniModel, 'tokens.txt'),
-        whisperEncoder: store.pathOf(whisperTinyModel, 'tiny-encoder.int8.onnx'),
-        whisperDecoder: store.pathOf(whisperTinyModel, 'tiny-decoder.int8.onnx'),
-        whisperTokens: store.pathOf(whisperTinyModel, 'tiny-tokens.txt'),
-      );
+    vad: store.pathOf(vadModel, 'silero_vad.onnx'),
+    omniModel: store.pathOf(omniModel, 'model.int8.onnx'),
+    omniTokens: store.pathOf(omniModel, 'tokens.txt'),
+    whisperEncoder: store.pathOf(whisperTinyModel, 'tiny-encoder.int8.onnx'),
+    whisperDecoder: store.pathOf(whisperTinyModel, 'tiny-decoder.int8.onnx'),
+    whisperTokens: store.pathOf(whisperTinyModel, 'tiny-tokens.txt'),
+  );
 
   static String langOf(String locale) => locale.split(RegExp('[_-]')).first;
 
   /// Which model a language needs, so the screen can say what to download.
-  static ModelSpec modelFor(String lang) => engineFor(lang) == 'omni' ? omniModel : whisperTinyModel;
+  static ModelSpec modelFor(String lang) =>
+      engineFor(lang) == 'omni' ? omniModel : whisperTinyModel;
 
   @override
-  Future<bool> supports(String locale) async => store.installed(vadModel) && store.installed(modelFor(langOf(locale)));
+  Future<bool> supports(String locale) async =>
+      store.installed(vadModel) && store.installed(modelFor(langOf(locale)));
+
+  @override
+  Future<bool> prepare(String locale) async {
+    final lang = langOf(locale);
+    if (!await supports(locale)) return false;
+    if (_prepared.contains(lang)) return true;
+    try {
+      final backend = _backend ??= await startBackend(paths);
+      final errors = <Object>[];
+      final ready = backend.events.firstWhere((e) {
+        if (e.kind == 'error') {
+          errors.add(StateError(e.text));
+          return true;
+        }
+        return e.kind == 'ready';
+      });
+      backend.prepare(lang);
+      final event = await ready;
+      if (errors.isNotEmpty || event.kind == 'error') return false;
+      _prepared.add(lang);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   Stream<SpeechEvent> listen(String locale) {
@@ -112,7 +155,8 @@ class SherpaSpeechEngine implements SpeechEngine {
             case 'partial':
               out.add(SpeechEvent(e.text));
             case 'final':
-              if (e.text.isNotEmpty) out.add(SpeechEvent(e.text, isFinal: true));
+              if (e.text.isNotEmpty)
+                out.add(SpeechEvent(e.text, isFinal: true));
               _stopMic();
               out.close();
             case 'error':

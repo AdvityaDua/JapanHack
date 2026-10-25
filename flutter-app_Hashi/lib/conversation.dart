@@ -238,7 +238,7 @@ String explainProblem(String code, String myLang) {
   if (code.startsWith('no_speech:')) {
     final l = code.substring(10);
     final name = l == 'ja' ? '日本語 (Japanese)' : langByCode(l).name;
-    return 'This phone cannot listen to $name with no connection yet. Install the offline speech pack for $name (see "How to set up"), or type instead.';
+    return 'The offline speech model for $name is not ready. Check the model audit above, download the missing files from the aircraft network, then try again.';
   }
   if (code.startsWith('no_model:')) {
     final pair = code.substring(9).split('>');
@@ -258,7 +258,7 @@ String explainProblem(String code, String myLang) {
     }
     return 'Offline translation failed: $detail. Check the language kit and try again.';
   }
-  if (code == 'speech_unavailable')
-    return 'Speech recognition is not available on this phone. You can type instead, in $mine.';
+  if (code == 'speech_unavailable' || code == 'offline_speech_unavailable')
+    return 'The offline speech engine is not available on this phone. Check the model audit above or type instead, in $mine.';
   return code;
 }

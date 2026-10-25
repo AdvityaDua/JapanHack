@@ -209,7 +209,7 @@ void main() {
     test('the model paths point into the model folders', () {
       final m = make();
       final p = m.engine.paths;
-      expect(p.omniModel, endsWith('omnilingual-asr-300m-int8/model.int8.onnx'));
+      expect(p.omniModel, endsWith('omnilingual-300m/model.int8.onnx'));
       expect(p.whisperEncoder, endsWith('whisper-tiny-int8/tiny-encoder.int8.onnx'));
       expect(p.vad, endsWith('silero-vad/silero_vad.onnx'));
     });

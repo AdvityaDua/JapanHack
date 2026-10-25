@@ -40,17 +40,19 @@ const omniModel = ModelSpec(
   id: 'omnilingual-300m',
   title: 'Speech: Indian languages',
   purpose: 'Listens to Hindi, Punjabi, Tamil and 1,600 other languages',
-  dir: 'omnilingual-asr-300m-int8',
+  // Keep the on-device folder identical to the aircraft manifest ID so a
+  // copied/downloaded bundle has one unambiguous location everywhere.
+  dir: 'omnilingual-300m',
   files: [
     ModelFile(
       'model.int8.onnx',
       '$_hf/csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/model.int8.onnx',
-      365400000,
+      365352120,
     ),
     ModelFile(
       'tokens.txt',
       '$_hf/csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/tokens.txt',
-      90000,
+      86423,
     ),
   ],
 );
@@ -122,6 +124,21 @@ class ModelStore {
     final have = file.lengthSync();
     return (have - f.bytes).abs() <= f.bytes * 0.01 + 2000;
   });
+
+  /// Files that are absent or outside the catalogue's size tolerance.
+  /// Keeping this audit in one place prevents the downloader and the loader
+  /// from disagreeing about whether a model is ready.
+  List<String> invalidFiles(ModelSpec m) => [
+    for (final f in m.files)
+      if (!_validFile(m, f)) '${m.id}/${f.name}',
+  ];
+
+  bool _validFile(ModelSpec m, ModelFile f) {
+    final file = File(pathOf(m, f.name));
+    if (!file.existsSync()) return false;
+    final have = file.lengthSync();
+    return (have - f.bytes).abs() <= f.bytes * 0.01 + 2000;
+  }
 
   /// Bytes already on the phone for this model, counting a half-finished download.
   int bytesPresent(ModelSpec m) {

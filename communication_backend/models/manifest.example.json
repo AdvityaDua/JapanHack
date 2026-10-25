@@ -9,12 +9,12 @@
       "files": [
         {
           "name": "model.int8.onnx",
-          "size_bytes": 365400000,
+          "size_bytes": 365352120,
           "sha256": "replace-with-sha256"
         },
         {
           "name": "tokens.txt",
-          "size_bytes": 90000,
+          "size_bytes": 86423,
           "sha256": "replace-with-sha256"
         }
       ]
