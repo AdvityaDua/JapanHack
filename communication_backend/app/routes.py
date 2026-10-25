@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket,
 from app.config import settings
 from app.messaging import MQTTBus
 from app.realtime import manager
-from app.schemas import CreateRequestBody, EventResponse, PairDeviceRequest, PairDeviceResponse, RequestResponse, SeatResponse, SessionResponse, UpdateStatusBody
-from app.service import create_request, pair_device, row_to_request, row_to_seat, update_status, verify_device_token
+from app.schemas import AnnouncementBody, CreateRequestBody, CrewMessageBody, EventResponse, PairDeviceRequest, PairDeviceResponse, PassengerActionBody, RequestResponse, SeatResponse, SessionResponse, UpdateStatusBody
+from app.service import cancel_passenger_request, create_announcement, create_crew_message, create_passenger_message, create_request, pair_device, row_to_request, row_to_seat, submit_passenger_action, update_status, verify_device_token
 from app.store import store
 
 
@@ -44,6 +44,24 @@ def make_router(bus: MQTTBus) -> APIRouter:
             raise HTTPException(status_code=404, detail="Request not found")
         return row_to_request(row)
 
+    @router.patch("/passenger/requests/{request_id}/cancel", response_model=RequestResponse)
+    def passenger_cancel(request_id: str, payload: UpdateStatusBody, device: dict = Depends(token_device)):
+        if device["device_type"] != "passenger":
+            raise HTTPException(status_code=403, detail="Passenger device required")
+        return cancel_passenger_request(request_id, payload.idempotency_key, device, bus)
+
+    @router.post("/passenger/requests/{request_id}/messages")
+    def passenger_message(request_id: str, payload: CrewMessageBody, device: dict = Depends(token_device)):
+        if device["device_type"] != "passenger":
+            raise HTTPException(status_code=403, detail="Passenger device required")
+        return create_passenger_message(request_id, payload, device, bus)
+
+    @router.post("/passenger/actions")
+    def passenger_action(payload: PassengerActionBody, device: dict = Depends(token_device)):
+        if device["device_type"] != "passenger":
+            raise HTTPException(status_code=403, detail="Passenger device required")
+        return submit_passenger_action(payload, device, bus)
+
     @router.get("/crew/requests", response_model=list[RequestResponse])
     def crew_requests(status: str | None = Query(default=None), device: dict = Depends(token_device)):
         if device["device_type"] != "crew":
@@ -62,6 +80,18 @@ def make_router(bus: MQTTBus) -> APIRouter:
         if device["device_type"] != "crew":
             raise HTTPException(status_code=403, detail="Crew device required")
         return update_status(request_id, payload, device, bus)
+
+    @router.post("/crew/requests/{request_id}/messages")
+    def crew_message(request_id: str, payload: CrewMessageBody, device: dict = Depends(token_device)):
+        if device["device_type"] != "crew":
+            raise HTTPException(status_code=403, detail="Crew device required")
+        return create_crew_message(request_id, payload, device, bus)
+
+    @router.post("/crew/announcements")
+    def crew_announcement(payload: AnnouncementBody, device: dict = Depends(token_device)):
+        if device["device_type"] != "crew":
+            raise HTTPException(status_code=403, detail="Crew device required")
+        return create_announcement(payload, device, bus)
 
     @router.get("/events", response_model=list[EventResponse])
     def replay_events(after_sequence: int = Query(default=0, ge=0), device: dict = Depends(token_device)):

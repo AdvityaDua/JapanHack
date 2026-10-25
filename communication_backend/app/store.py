@@ -166,6 +166,10 @@ class Store:
             self._append_event(conn, event, topic, updated_at)
             return conn.execute("SELECT * FROM communication_requests WHERE id = ?", (request_id,)).fetchone()
 
+    def append_event(self, event: dict, topic: str, occurred_at: str) -> None:
+        with self.lock, self.connect() as conn:
+            self._append_event(conn, event, topic, occurred_at)
+
     def replay_events(self, flight_id: str, after_sequence: int, limit: int = 200) -> list[sqlite3.Row]:
         with self.connect() as conn:
             return conn.execute("SELECT * FROM request_events WHERE flight_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?", (flight_id, after_sequence, limit)).fetchall()

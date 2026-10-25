@@ -1,0 +1,268 @@
+import 'package:flutter/material.dart';
+
+import 'content.dart' show speakText;
+import 'conversation.dart';
+import 'engines.dart';
+import 'languages.dart';
+import 'theme.dart';
+
+/// Speak and translate, open ended, on the phone. The passenger talks in their own language and the other person hears
+/// Japanese; the other person talks in Japanese and the passenger reads and hears their own language. The translation
+/// appears while the person is still speaking.
+class TranslateScreen extends StatefulWidget {
+  final String lang;
+  /// Tests pass their own engines.
+  final ConversationController? controller;
+  const TranslateScreen({super.key, required this.lang, this.controller});
+
+  @override
+  State<TranslateScreen> createState() => _TranslateScreenState();
+}
+
+class _TranslateScreenState extends State<TranslateScreen> {
+  late final ConversationController c;
+  final text = TextEditingController();
+  bool typing = false;
+  late final bool ownsController;
+
+  @override
+  void initState() {
+    super.initState();
+    ownsController = widget.controller == null;
+    c = widget.controller ??
+        ConversationController(
+          speech: AndroidSpeechEngine(),
+          translator: CompositeTranslator([MlKitTranslator()]),
+          myLang: widget.lang,
+          speak: (t, lang) => speakText(t, lang == 'ja' ? 'ja-JP' : langByCode(lang).tts),
+        );
+  }
+
+  @override
+  void dispose() {
+    if (ownsController) c.dispose();
+    text.dispose();
+    super.dispose();
+  }
+
+  String get mine => langByCode(widget.lang).name;
+
+  void toggle(Side side) {
+    if (c.listening == side) {
+      c.stopListening();
+    } else {
+      c.startListening(side);
+    }
+  }
+
+  void sendTyped(Side side) {
+    final v = text.text.trim();
+    if (v.isEmpty) return;
+    text.clear();
+    c.typed(side, v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: c,
+      builder: (context, _) {
+        final live = c.listening != null || c.heard.isNotEmpty;
+        return WashiPage(
+          title: 'Speak & translate',
+          kanji: '通訳',
+          actions: [
+            IconButton(
+              tooltip: c.speakAloud ? 'Reading aloud is on' : 'Reading aloud is off',
+              icon: Icon(c.speakAloud ? Icons.volume_up_rounded : Icons.volume_off_rounded, color: ai),
+              onPressed: () => setState(() => c.speakAloud = !c.speakAloud),
+            ),
+          ],
+          bottom: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                if (typing)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(children: [
+                      Expanded(child: TextField(controller: text, minLines: 1, maxLines: 3, style: const TextStyle(fontSize: 18), decoration: const InputDecoration(hintText: 'Type here', contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14)))),
+                      const SizedBox(width: 8),
+                      IconButton.filled(tooltip: 'Translate what I typed', style: IconButton.styleFrom(backgroundColor: ai, minimumSize: const Size(52, 52)), onPressed: () => sendTyped(Side.me), icon: const Icon(Icons.translate_rounded, color: Colors.white)),
+                      IconButton.filled(tooltip: 'Translate Japanese I typed', style: IconButton.styleFrom(backgroundColor: shuBright, minimumSize: const Size(52, 52)), onPressed: () => sendTyped(Side.them), icon: const Icon(Icons.translate_rounded, color: Colors.white)),
+                    ]),
+                  ),
+                Row(children: [
+                  Expanded(child: _Mic(label: 'I speak', sub: mine, color: ai, active: c.listening == Side.me, onTap: () => toggle(Side.me))),
+                  const SizedBox(width: 12),
+                  Expanded(child: _Mic(label: 'They speak', sub: '日本語', color: shuBright, active: c.listening == Side.them, onTap: () => toggle(Side.them))),
+                ]),
+                TextButton.icon(onPressed: () => setState(() => typing = !typing), icon: Icon(typing ? Icons.keyboard_hide_rounded : Icons.keyboard_rounded), label: Text(typing ? 'Hide keyboard' : 'Type instead')),
+              ]),
+            ),
+          ),
+          children: [
+            if (c.problem != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: PaperCard(
+                  spine: warn,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [const Icon(Icons.info_outline_rounded, color: warn), const SizedBox(width: 10), Expanded(child: Text(explainProblem(c.problem!, widget.lang), style: const TextStyle(fontSize: 16, height: 1.35)))]),
+                    Row(children: [
+                      if (c.problem!.startsWith('no_speech')) TextButton(onPressed: () => showDialog<void>(context: context, builder: (_) => const _SetupDialog()), child: const Text('How to set up')),
+                      TextButton(onPressed: c.clearProblem, child: const Text('Dismiss')),
+                    ]),
+                  ]),
+                ),
+              ),
+            if (live)
+              PaperCard(
+                spine: c.listening == Side.them ? shuBright : ai,
+                color: kinSoft.withValues(alpha: 0.4),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    _Pulse(on: c.listening != null),
+                    const SizedBox(width: 10),
+                    Text(c.listening == null ? 'Translating…' : (c.listening == Side.me ? 'Listening to you…' : 'Listening to them…'), style: const TextStyle(fontWeight: FontWeight.w800, color: aiDeep)),
+                  ]),
+                  const SizedBox(height: 8),
+                  Text(c.heard.isEmpty ? '…' : c.heard, style: const TextStyle(fontSize: 18, height: 1.3)),
+                  if (c.heardTranslation != null) ...[
+                    const Divider(height: 22),
+                    Text(c.heardTranslation!, style: const TextStyle(fontFamily: serifFont, fontSize: 26, fontWeight: FontWeight.w800, color: aiDeep, height: 1.3)),
+                  ],
+                ]),
+              ),
+            if (!live && c.history.isEmpty && c.problem == null) const _Intro(),
+            const SizedBox(height: 10),
+            for (final t in c.history.reversed) Padding(padding: const EdgeInsets.only(bottom: 10), child: _TurnTile(turn: t, onReplay: () => c.replay(t))),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Intro extends StatelessWidget {
+  const _Intro();
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: Text(
+          'Tap "I speak" and talk in your own language. The Japanese appears while you speak and is read aloud for the other person.\n\nWhen they answer, tap "They speak" and hold the phone towards them. You see and hear it in your language.',
+          style: TextStyle(fontSize: 17, color: sumiSoft, height: 1.45),
+        ),
+      );
+}
+
+class _Mic extends StatelessWidget {
+  final String label;
+  final String sub;
+  final Color color;
+  final bool active;
+  final VoidCallback onTap;
+  const _Mic({required this.label, required this.sub, required this.color, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: active ? 'Stop listening' : '$label, $sub',
+        child: SizedBox(
+          height: 84,
+          child: FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: active ? Colors.black87 : color, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)), padding: const EdgeInsets.symmetric(horizontal: 8)),
+            onPressed: onTap,
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(active ? Icons.stop_rounded : Icons.mic_rounded, size: 30),
+              Text(active ? 'Tap to stop' : label, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+              Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
+            ]),
+          ),
+        ),
+      );
+}
+
+class _Pulse extends StatefulWidget {
+  final bool on;
+  const _Pulse({required this.on});
+  @override
+  State<_Pulse> createState() => _PulseState();
+}
+
+class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
+  late final AnimationController a = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.on) a.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _Pulse old) {
+    super.didUpdateWidget(old);
+    if (widget.on && !a.isAnimating) a.repeat(reverse: true);
+    if (!widget.on) a.stop();
+  }
+
+  @override
+  void dispose() {
+    a.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(opacity: Tween(begin: 0.35, end: 1.0).animate(a), child: const Icon(Icons.mic_rounded, color: shuBright));
+}
+
+class _TurnTile extends StatelessWidget {
+  final Turn turn;
+  final VoidCallback onReplay;
+  const _TurnTile({required this.turn, required this.onReplay});
+
+  @override
+  Widget build(BuildContext context) {
+    final me = turn.side == Side.me;
+    return Align(
+      alignment: me ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.9),
+        child: PaperCard(
+          spine: me ? ai : shuBright,
+          padding: const EdgeInsets.fromLTRB(14, 12, 6, 8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(turn.translated ?? '', style: const TextStyle(fontFamily: serifFont, fontSize: 24, fontWeight: FontWeight.w800, color: aiDeep, height: 1.3)),
+            const SizedBox(height: 4),
+            Text(turn.original, style: const TextStyle(fontSize: 15, color: sumiSoft)),
+            Row(children: [
+              if (turn.translateTime != null) Text('${(turn.translateTime!.inMilliseconds / 1000).toStringAsFixed(1)} s', style: const TextStyle(fontSize: 12, color: sumiSoft)),
+              const Spacer(),
+              IconButton(tooltip: 'Read aloud', onPressed: onReplay, icon: const Icon(Icons.volume_up_rounded, color: ai)),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _SetupDialog extends StatelessWidget {
+  const _SetupDialog();
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Listen with no connection'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Your phone listens with its own speech engine. To use a language offline:\n\n'
+            '1. Open your phone Settings.\n'
+            '2. Search for "Offline speech recognition" (under Google, or Languages & input, then Voice input).\n'
+            '3. Download the language you need, for example Hindi, Japanese or English (India).\n\n'
+            'Do this once, with Wi-Fi, before the flight.',
+            style: TextStyle(fontSize: 16, height: 1.4),
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+      );
+}

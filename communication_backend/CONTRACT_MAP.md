@@ -130,6 +130,24 @@ GET /api/v1/passenger/requests/{request_id}
 Authorization: Bearer {device_token}
 ```
 
+### Passenger actions
+
+Passenger UI actions use the HTTP/event protocol; they are not sent as legacy
+WebSocket commands.
+
+```http
+PATCH /api/v1/passenger/requests/{request_id}/cancel
+POST /api/v1/passenger/requests/{request_id}/messages
+POST /api/v1/passenger/actions
+Authorization: Bearer {device_token}
+```
+
+`/passenger/actions` accepts an `action`, optional `request_id`, arbitrary
+JSON `payload`, and an `idempotency_key`. Actions such as
+`announcement_acknowledged`, `exit_row_answer`, `quiet_seat_checkin_answer`,
+`message_confirmed`, `message_cancelled`, and `profile_updated` are persisted
+as `passenger.action_submitted` events for the crew application.
+
 ## Crew HTTP API
 
 ### Request queue
@@ -190,6 +208,47 @@ created → expired
 acknowledged → escalated
 in_progress → escalated
 ```
+
+### Crew message
+
+```http
+POST /api/v1/crew/requests/{request_id}/messages
+Authorization: Bearer {crew_device_token}
+Content-Type: application/json
+```
+
+```json
+{
+  "text": "I will bring water shortly.",
+  "translated_text": null,
+  "idempotency_key": "flutter-message-uuid"
+}
+```
+
+The passenger receives a `message.created` WebSocket event targeted to the
+passenger device that created the request.
+
+### Crew announcement
+
+```http
+POST /api/v1/crew/announcements
+Authorization: Bearer {crew_device_token}
+Content-Type: application/json
+```
+
+```json
+{
+  "text": "Please remain seated.",
+  "target_device_id": null,
+  "kind": "info",
+  "icon": "Megaphone",
+  "idempotency_key": "flutter-announcement-uuid"
+}
+```
+
+`target_device_id` can target one passenger; `null` broadcasts to every
+passenger connected to the active flight. The passenger receives an
+`announcement.created` event and can translate it locally.
 
 ## WebSocket contract
 

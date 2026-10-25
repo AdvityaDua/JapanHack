@@ -43,6 +43,27 @@ class UpdateStatusBody(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=160)
 
 
+class CrewMessageBody(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    translated_text: str | None = Field(default=None, max_length=500)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class PassengerActionBody(BaseModel):
+    action: str = Field(min_length=1, max_length=80)
+    request_id: str | None = Field(default=None, max_length=80)
+    payload: dict = Field(default_factory=dict)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class AnnouncementBody(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    target_device_id: str | None = None
+    kind: str = Field(default="info", max_length=40)
+    icon: str = Field(default="Megaphone", max_length=60)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
 class RequestResponse(BaseModel):
     id: str
     flight_id: str

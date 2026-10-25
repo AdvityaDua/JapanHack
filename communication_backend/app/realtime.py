@@ -34,5 +34,15 @@ class ConnectionManager:
         for websocket in targets:
             asyncio.run_coroutine_threadsafe(self.send(websocket, event), self.loop)
 
+    def broadcast_passengers(self, flight_id: str, event: dict, passenger_device_id: str | None = None) -> None:
+        if not self.loop:
+            return
+        if passenger_device_id:
+            targets = set(self.passengers.get(f"{flight_id}:{passenger_device_id}", set()))
+        else:
+            targets = {socket for key, sockets in self.passengers.items() if key.startswith(f"{flight_id}:") for socket in sockets}
+        for websocket in targets:
+            asyncio.run_coroutine_threadsafe(self.send(websocket, event), self.loop)
+
 
 manager = ConnectionManager()

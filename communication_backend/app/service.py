@@ -10,7 +10,7 @@ from app.config import settings
 from app.domain import now_iso, new_id, validate_transition
 from app.messaging import MQTTBus, publish_pending
 from app.realtime import manager
-from app.schemas import CreateRequestBody, PairDeviceRequest, UpdateStatusBody
+from app.schemas import AnnouncementBody, CreateRequestBody, CrewMessageBody, PairDeviceRequest, PassengerActionBody, UpdateStatusBody
 from app.store import store
 
 
@@ -95,6 +95,96 @@ def update_status(request_id: str, payload: UpdateStatusBody, device: dict, bus:
     publish_pending(bus)
     manager.broadcast(device["flight_id"], event, passenger_device_id=current["passenger_device_id"])
     return response
+
+
+def cancel_passenger_request(request_id: str, idempotency_key: str, device: dict, bus: MQTTBus) -> dict:
+    scope = f"passenger-status:{device['device_id']}:{request_id}"
+    existing = store.get_idempotent(scope, idempotency_key)
+    if existing:
+        return existing
+    current = store.get_request(request_id)
+    if not current or current["flight_id"] != device["flight_id"] or current["passenger_device_id"] != device["device_id"]:
+        raise HTTPException(status_code=404, detail="Request not found")
+    try:
+        validate_transition(current["status"], "cancelled")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    now = now_iso()
+    event = {"event_id": new_id(), "event_type": "request.status_changed", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": request_id, "producer": "passenger-device", "device_id": device["device_id"], "occurred_at": now, "payload": {"status": "cancelled", "note": "Cancelled by passenger", "crew_device_id": None}}
+    row = store.transition_request(request_id, "cancelled", None, event, f"flight/{device['flight_id']}/events/request-status-changed", now)
+    response = row_to_request(row)
+    store.save_idempotent(scope, idempotency_key, response, now)
+    publish_pending(bus)
+    manager.broadcast(device["flight_id"], event, passenger_device_id=device["device_id"])
+    return response
+
+
+def create_crew_message(request_id: str, payload: CrewMessageBody, device: dict, bus: MQTTBus) -> dict:
+    existing = store.get_idempotent(f"message:{request_id}", payload.idempotency_key)
+    if existing:
+        return existing
+    request = store.get_request(request_id)
+    if not request or request["flight_id"] != device["flight_id"]:
+        raise HTTPException(status_code=404, detail="Request not found")
+    now = now_iso()
+    message = {"id": new_id(), "request_id": request_id, "from": "crew", "original": payload.text, "translated": payload.translated_text, "status": "sent", "lane": "machine"}
+    event = {"event_id": new_id(), "event_type": "message.created", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": request_id, "producer": "crew-device", "device_id": device["device_id"], "occurred_at": now, "payload": message}
+    store.append_event(event, f"flight/{device['flight_id']}/events/message-created", now)
+    store.save_idempotent(f"message:{request_id}", payload.idempotency_key, message, now)
+    publish_pending(bus)
+    manager.broadcast(device["flight_id"], event, passenger_device_id=request["passenger_device_id"])
+    return message
+
+
+def create_passenger_message(request_id: str, payload: CrewMessageBody, device: dict, bus: MQTTBus) -> dict:
+    existing = store.get_idempotent(f"passenger-message:{device['device_id']}:{request_id}", payload.idempotency_key)
+    if existing:
+        return existing
+    request = store.get_request(request_id)
+    if not request or request["flight_id"] != device["flight_id"] or request["passenger_device_id"] != device["device_id"]:
+        raise HTTPException(status_code=404, detail="Request not found")
+    now = now_iso()
+    message = {"id": new_id(), "request_id": request_id, "from": "passenger", "original": payload.text, "translated": payload.translated_text, "status": "sent", "lane": "machine"}
+    event = {"event_id": new_id(), "event_type": "message.created", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": request_id, "producer": "passenger-device", "device_id": device["device_id"], "occurred_at": now, "payload": message}
+    store.append_event(event, f"flight/{device['flight_id']}/events/message-created", now)
+    store.save_idempotent(f"passenger-message:{device['device_id']}:{request_id}", payload.idempotency_key, message, now)
+    publish_pending(bus)
+    manager.broadcast(device["flight_id"], event)
+    return message
+
+
+def submit_passenger_action(payload: PassengerActionBody, device: dict, bus: MQTTBus) -> dict:
+    scope = f"passenger-action:{device['device_id']}"
+    existing = store.get_idempotent(scope, payload.idempotency_key)
+    if existing:
+        return existing
+    if payload.request_id:
+        request = store.get_request(payload.request_id)
+        if not request or request["flight_id"] != device["flight_id"] or request["passenger_device_id"] != device["device_id"]:
+            raise HTTPException(status_code=404, detail="Request not found")
+    now = now_iso()
+    action = {"id": new_id(), "action": payload.action, "request_id": payload.request_id, "payload": payload.payload, "device_id": device["device_id"]}
+    event = {"event_id": new_id(), "event_type": "passenger.action_submitted", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": payload.request_id or device["device_id"], "producer": "passenger-device", "device_id": device["device_id"], "occurred_at": now, "payload": action}
+    store.append_event(event, f"flight/{device['flight_id']}/events/passenger-action-submitted", now)
+    store.save_idempotent(scope, payload.idempotency_key, action, now)
+    publish_pending(bus)
+    manager.broadcast(device["flight_id"], event)
+    return action
+
+
+def create_announcement(payload: AnnouncementBody, device: dict, bus: MQTTBus) -> dict:
+    existing = store.get_idempotent(f"announcement:{device['device_id']}", payload.idempotency_key)
+    if existing:
+        return existing
+    now = now_iso()
+    announcement_id = new_id()
+    announcement = {"id": announcement_id, "phrase": None, "custom": payload.text, "texts": {"English": payload.text}, "kind": payload.kind, "icon": payload.icon, "target_device_id": payload.target_device_id}
+    event = {"event_id": new_id(), "event_type": "announcement.created", "event_version": 1, "flight_id": device["flight_id"], "aggregate_id": announcement_id, "producer": "crew-device", "device_id": device["device_id"], "occurred_at": now, "payload": announcement}
+    store.append_event(event, f"flight/{device['flight_id']}/events/announcement-created", now)
+    store.save_idempotent(f"announcement:{device['device_id']}", payload.idempotency_key, announcement, now)
+    publish_pending(bus)
+    manager.broadcast_passengers(device["flight_id"], event, passenger_device_id=payload.target_device_id)
+    return announcement
 
 
 def handle_mqtt_command(topic: str, payload: dict, bus: MQTTBus) -> None:

@@ -134,3 +134,91 @@ def test_event_replay_returns_request_created_event(client):
     replay = client.get("/api/v1/events?after_sequence=0", headers={"Authorization": f"Bearer {passenger['device_token']}"})
     assert replay.status_code == 200
     assert replay.json()[0]["event_type"] == "request.created"
+
+
+def test_crew_message_and_announcement_are_replayable(client):
+    passenger = pair(client, "passenger", seat_number="24C")
+    crew = pair(client, "crew", display_name="Crew 1", pairing_code="CREW-DEMO")
+    request = client.post(
+        "/api/v1/passenger/requests",
+        headers={"Authorization": f"Bearer {passenger['device_token']}"},
+        json={"device_id": passenger["device_id"], "seat_token": passenger["seat_token"], "category": "water", "idempotency_key": "message-request-key"},
+    ).json()
+
+    message = client.post(
+        f"/api/v1/crew/requests/{request['id']}/messages",
+        headers={"Authorization": f"Bearer {crew['device_token']}"},
+        json={"text": "I will bring water shortly.", "idempotency_key": "crew-message-key"},
+    )
+    assert message.status_code == 200
+    assert message.json()["from"] == "crew"
+
+    announcement = client.post(
+        "/api/v1/crew/announcements",
+        headers={"Authorization": f"Bearer {crew['device_token']}"},
+        json={"text": "Please remain seated.", "idempotency_key": "announcement-key"},
+    )
+    assert announcement.status_code == 200
+
+    replay = client.get("/api/v1/events?after_sequence=0", headers={"Authorization": f"Bearer {passenger['device_token']}"})
+    assert [event["event_type"] for event in replay.json()] == ["request.created", "message.created", "announcement.created"]
+
+
+def test_passenger_new_protocol_actions_and_cancel(client):
+    passenger = pair(client, "passenger", seat_number="31B")
+    crew = pair(client, "crew", display_name="Crew 1", pairing_code="CREW-DEMO")
+    passenger_headers = {"Authorization": f"Bearer {passenger['device_token']}"}
+    crew_headers = {"Authorization": f"Bearer {crew['device_token']}"}
+    request = client.post(
+        "/api/v1/passenger/requests",
+        headers=passenger_headers,
+        json={"device_id": passenger["device_id"], "seat_token": passenger["seat_token"], "category": "assistance", "idempotency_key": "passenger-request-1"},
+    ).json()
+
+    action = client.post(
+        "/api/v1/passenger/actions",
+        headers=passenger_headers,
+        json={"action": "exit_row_answer", "payload": {"willing": True}, "idempotency_key": "passenger-action-1"},
+    )
+    assert action.status_code == 200
+    assert action.json()["action"] == "exit_row_answer"
+
+    message = client.post(
+        f"/api/v1/passenger/requests/{request['id']}/messages",
+        headers=passenger_headers,
+        json={"text": "I need help, please.", "idempotency_key": "passenger-message-1"},
+    )
+    assert message.status_code == 200
+    assert message.json()["from"] == "passenger"
+
+    cancelled = client.patch(
+        f"/api/v1/passenger/requests/{request['id']}/cancel",
+        headers=passenger_headers,
+        json={"status": "cancelled", "idempotency_key": "passenger-cancel-1"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+    crew_events = client.get("/api/v1/events?after_sequence=0", headers=crew_headers)
+    assert [event["event_type"] for event in crew_events.json()] == [
+        "request.created",
+        "passenger.action_submitted",
+        "message.created",
+        "request.status_changed",
+    ]
+
+
+def test_passenger_cannot_cancel_another_passengers_request(client):
+    owner = pair(client, "passenger", seat_number="12A")
+    other = pair(client, "passenger", seat_number="12B")
+    request = client.post(
+        "/api/v1/passenger/requests",
+        headers={"Authorization": f"Bearer {owner['device_token']}"},
+        json={"device_id": owner["device_id"], "seat_token": owner["seat_token"], "category": "water", "idempotency_key": "owner-request-1"},
+    ).json()
+    response = client.patch(
+        f"/api/v1/passenger/requests/{request['id']}/cancel",
+        headers={"Authorization": f"Bearer {other['device_token']}"},
+        json={"status": "cancelled", "idempotency_key": "other-cancel-1"},
+    )
+    assert response.status_code == 404
