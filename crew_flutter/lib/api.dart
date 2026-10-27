@@ -145,6 +145,35 @@ class CrewApi {
     );
   }
 
+  Future<CrewAnnouncement> sendAnnouncement({
+    required String text,
+    required String sourceLanguage,
+    required String kind,
+  }) async {
+    if (session == null) throw Exception('Pair the crew tablet first');
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/v1/crew/announcements'),
+      headers: {..._headers(), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'text': text,
+        'source_language': sourceLanguage,
+        'target_device_id': null,
+        'kind': kind,
+        'icon': 'Megaphone',
+        'idempotency_key':
+            'crew-announcement-${DateTime.now().microsecondsSinceEpoch}',
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Announcement failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return CrewAnnouncement.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   Stream<Map<String, dynamic>> connectToEvents() {
     if (session == null) return const Stream.empty();
     final base = Uri.parse(

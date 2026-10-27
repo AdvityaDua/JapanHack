@@ -99,6 +99,37 @@ class CrewMessage {
   );
 }
 
+class CrewAnnouncement {
+  const CrewAnnouncement({
+    required this.id,
+    required this.text,
+    required this.sourceLanguage,
+    required this.kind,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String text;
+  final String sourceLanguage;
+  final String kind;
+  final DateTime createdAt;
+
+  factory CrewAnnouncement.fromJson(Map<String, dynamic> json) =>
+      CrewAnnouncement(
+        id: json['id']?.toString() ?? '',
+        text: json['custom']?.toString() ?? json['text']?.toString() ?? '',
+        sourceLanguage: json['source_language']?.toString() ?? 'en',
+        kind: json['kind']?.toString() ?? 'info',
+        createdAt:
+            DateTime.tryParse(
+              json['created_at']?.toString() ??
+                  json['occurred_at']?.toString() ??
+                  '',
+            ) ??
+            DateTime.now(),
+      );
+}
+
 class CrewSeat {
   const CrewSeat({
     required this.seatNumber,

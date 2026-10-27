@@ -11,7 +11,7 @@ const background = Color(0xFFF5F7FA);
 const border = Color(0xFFE3E8EF);
 const defaultCrewBackendUrl = String.fromEnvironment(
   'CREW_BACKEND_URL',
-  defaultValue: 'http://hashi-cabin.local:8001',
+  defaultValue: 'http://127.0.0.1:8001',
 );
 
 void main() => runApp(const HushitCrewApp());
@@ -42,6 +42,7 @@ class _CrewDashboardState extends State<CrewDashboard> {
   CrewApi api = CrewApi(defaultCrewBackendUrl);
   List<CrewRequest> requests = [];
   List<CrewSeat> seats = [];
+  List<CrewAnnouncement> announcements = [];
   final Map<String, List<CrewMessage>> conversations = {};
   String filter = 'All';
   String? selectedId;
@@ -189,8 +190,45 @@ class _CrewDashboardState extends State<CrewDashboard> {
         final message = CrewMessage.fromJson(payload);
         final current = conversations.putIfAbsent(id, () => []);
         if (!current.any((item) => item.id == message.id)) current.add(message);
+      } else if (event['event_type'] == 'announcement.created') {
+        final announcement = CrewAnnouncement.fromJson({
+          ...payload,
+          'occurred_at': event['occurred_at'],
+        });
+        if (!announcements.any((item) => item.id == announcement.id)) {
+          announcements = [announcement, ...announcements];
+        }
       }
     });
+  }
+
+  Future<void> makeAnnouncement() async {
+    if (!connected) {
+      _showError('Connect the crew tablet before sending an announcement.');
+      return;
+    }
+    final draft = await showDialog<_AnnouncementDraft>(
+      context: context,
+      builder: (_) => const AnnouncementComposer(),
+    );
+    if (draft == null) return;
+    try {
+      final announcement = await api.sendAnnouncement(
+        text: draft.text,
+        sourceLanguage: draft.sourceLanguage,
+        kind: draft.kind,
+      );
+      if (!mounted) return;
+      setState(() => announcements = [announcement, ...announcements]);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Announcement broadcast to all connected passengers.'),
+          backgroundColor: Color(0xFF168C5A),
+        ),
+      );
+    } catch (exception) {
+      _showError(exception.toString());
+    }
   }
 
   Future<void> changeStatus(String status) async {
@@ -296,6 +334,8 @@ class _CrewDashboardState extends State<CrewDashboard> {
                             .length,
                         onRefresh: connect,
                         onFilter: (value) => setState(() => filter = value),
+                        announcementCount: announcements.length,
+                        onAnnouncement: makeAnnouncement,
                       ),
                     ),
                   ],
@@ -1544,6 +1584,173 @@ class SeatMap extends StatelessWidget {
   }
 }
 
+class _AnnouncementDraft {
+  const _AnnouncementDraft({
+    required this.text,
+    required this.sourceLanguage,
+    required this.kind,
+  });
+
+  final String text;
+  final String sourceLanguage;
+  final String kind;
+}
+
+class AnnouncementComposer extends StatefulWidget {
+  const AnnouncementComposer({super.key});
+
+  @override
+  State<AnnouncementComposer> createState() => _AnnouncementComposerState();
+}
+
+class _AnnouncementComposerState extends State<AnnouncementComposer> {
+  final text = TextEditingController();
+  String sourceLanguage = 'en';
+  String kind = 'info';
+
+  static const presets = <String>[
+    'Please remain seated.',
+    'Please fasten your seatbelt.',
+    'The cabin crew will begin meal service shortly.',
+    'We are experiencing turbulence. Please remain seated.',
+  ];
+
+  @override
+  void dispose() {
+    text.dispose();
+    super.dispose();
+  }
+
+  void usePreset(String value) => setState(() => text.text = value);
+
+  void submit() {
+    final value = text.text.trim();
+    if (value.isEmpty) return;
+    Navigator.pop(
+      context,
+      _AnnouncementDraft(
+        text: value,
+        sourceLanguage: sourceLanguage,
+        kind: kind,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Row(
+      children: [
+        Icon(Icons.campaign_outlined, color: red),
+        SizedBox(width: 10),
+        Expanded(child: Text('Make announcement')),
+      ],
+    ),
+    content: SizedBox(
+      width: 520,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'This will be broadcast to every connected passenger on this flight. Each passenger device translates it into its saved preferred language.',
+              style: TextStyle(color: Colors.black54, height: 1.35),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Quick messages',
+              style: TextStyle(fontWeight: FontWeight.w800, color: navy),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final preset in presets)
+                  ActionChip(
+                    label: Text(preset),
+                    onPressed: () => usePreset(preset),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: text,
+              autofocus: true,
+              minLines: 3,
+              maxLines: 5,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'Announcement text',
+                hintText: 'Type what passengers should hear…',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: sourceLanguage,
+                    decoration: const InputDecoration(
+                      labelText: 'Spoken language',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'en', child: Text('English')),
+                      DropdownMenuItem(value: 'ja', child: Text('日本語')),
+                      DropdownMenuItem(value: 'hi', child: Text('हिन्दी')),
+                    ],
+                    onChanged: (value) => setState(() {
+                      if (value != null) sourceLanguage = value;
+                    }),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: kind,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'info',
+                        child: Text('Information'),
+                      ),
+                      DropdownMenuItem(value: 'safety', child: Text('Safety')),
+                      DropdownMenuItem(
+                        value: 'service',
+                        child: Text('Service'),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      if (value != null) kind = value;
+                    }),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton.icon(
+        onPressed: submit,
+        icon: const Icon(Icons.send_rounded),
+        label: const Text('Broadcast'),
+      ),
+    ],
+  );
+}
+
 class QuickActions extends StatelessWidget {
   const QuickActions({
     super.key,
@@ -1551,11 +1758,15 @@ class QuickActions extends StatelessWidget {
     required this.urgentCount,
     required this.onRefresh,
     required this.onFilter,
+    required this.announcementCount,
+    required this.onAnnouncement,
   });
   final int pendingCount;
   final int urgentCount;
   final VoidCallback onRefresh;
   final ValueChanged<String> onFilter;
+  final int announcementCount;
+  final VoidCallback onAnnouncement;
   @override
   Widget build(BuildContext context) => Panel(
     title: 'Quick Actions',
@@ -1579,6 +1790,12 @@ class QuickActions extends StatelessWidget {
           icon: Icons.refresh,
           label: 'Refresh queue',
           onTap: onRefresh,
+        ),
+        ActionButton(
+          icon: Icons.campaign_outlined,
+          label: 'Make announcement',
+          value: announcementCount == 0 ? null : '$announcementCount sent',
+          onTap: onAnnouncement,
         ),
       ],
     ),
